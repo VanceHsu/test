@@ -1,0 +1,341 @@
+import cx_Oracle
+import pandas as pd
+import numpy as np
+from sqlalchemy import create_engine
+from urllib.parse import quote_plus as urlquote
+
+# 連結Oracle database lifecycle
+connection = cx_Oracle.connect('vance_hsu/vance_hsu_123@10.97.15.146:1521/ISDB')
+sql = '''Select * From BO_SEG.LIFE_CYCLE WHERE TO_CHAR(ADJUSTDATE,'YYYYMM') = '202312'
+'''
+df = pd.read_sql(sql, con=connection)
+connection.close()
+
+# 串聯前作調整
+df['Month'] = df['ADJUSTDATE'].dt.strftime('%Y%m')
+df['NEW_HOUSE_ID'] = df['NEW_HOUSE_ID'].astype('int64')
+df['Month'] = df['Month'].astype('int64')
+df['訂單編號'] = df['訂單編號'].astype('str')
+df['訂單日'] = df['訂單編號'].str[:8].astype('int64')
+
+# 連結外部檔案
+df01 = pd.read_excel(r'C:\Users\vance_hsu\Desktop\vance_desktop\Data Allocate\supplierlist2023.xlsx')
+df02 = pd.read_excel(r'C:\Users\vance_hsu\Desktop\vance_desktop\Data Allocate\年度銷售獎勵金_2023.xlsx')
+df03 = pd.read_excel(r'C:\Users\vance_hsu\Desktop\vance_desktop\Data Allocate\dep.xlsx')
+df04 = pd.read_excel(r'C:\Users\vance_hsu\Desktop\vance_desktop\Data Allocate\actual.xlsx')
+df05 = pd.read_excel(r'C:\Users\vance_hsu\Desktop\vance_desktop\Data Allocate\遠傳幣補貼訂單.xlsx')
+df05['Month'] = df05['Month'].astype('int64')
+df05['訂單編號'] = df05['訂單編號'].astype('str')
+df = pd.merge(df, df01, on=['Month', '供應商代碼'], how='left')
+df = pd.merge(df, df02, on=['Month', '供應商代碼'], how='left')
+df = pd.merge(df, df03, on=['NEW_HOUSE_ID'], how='left')
+df = pd.merge(df, df04, on=['Month'], how='left')
+df = pd.merge(df, df05, on=['Month', '交易序號', '訂單編號'], how='left')
+
+# 設定不參與分攤的項目
+df['exclusion_tag'] = np.where((df['產品歸館後館別'].isin(['金卡會員專屬優惠', 'IT', '包材測試館', '作廢商品', '德誼專館','企採團購館',
+                                                    '快速到貨館', 'friDay嚴選', '超商兌換券', '包材館','送禮館', '新品上架'])), 'Y', 'N')
+
+# 分攤後扣及系統使用費
+df['sup_revenue'] = df.groupby(['供應商代碼']).營收.transform(np.sum)
+df['sup_cogs'] = df.groupby(['供應商代碼']).銷貨成本.transform(np.sum)
+df['遠百廠商'].fillna('N', inplace=True)
+df['後扣'] = df['活動贊助費'] + df['銷售獎勵金'] + df['年度銷售獎勵金'] + df['年度銷售獎勵金_C999']
+df['後扣分攤註記'] = np.where((df['exclusion_tag'] == 'Y') | (df['sup_cogs'] == 0) | (df['後扣'] == 0), 'N', 'Y')
+df['活動贊助費_alloc'] = np.where(df['後扣分攤註記'] == 'N', 0, df['銷貨成本'] / df['sup_cogs'] * df['活動贊助費'])
+df['銷售獎勵金_alloc'] = np.where(df['後扣分攤註記'] == 'N', 0, df['銷貨成本'] / df['sup_cogs'] * df['銷售獎勵金'])
+df['年度銷售獎勵金_alloc'] = np.where(df['後扣分攤註記'] == 'N', 0, df['銷貨成本'] / df['sup_cogs'] * df['年度銷售獎勵金'])
+df['年度銷售獎勵金C999_alloc'] = np.where(df['後扣分攤註記'] == 'N', 0, df['銷貨成本'] / df['sup_cogs'] * df['年度銷售獎勵金_C999'])
+df['後扣_alloc'] = df['活動贊助費_alloc'] + df['銷售獎勵金_alloc'] + df['年度銷售獎勵金_alloc'] + df['年度銷售獎勵金C999_alloc']
+df['後扣_alloc'].fillna(0, inplace=True)
+df['系統使用費分攤註記'].fillna('N', inplace=True)
+df['系統使用費分攤註記'] = np.where(df['exclusion_tag'] == 'Y', 'N', df['系統使用費分攤註記'])
+df['系統使用費_alloc'] = np.where((df['sup_revenue'] == 0) | (df['系統使用費分攤註記'] == 'N'), 0,
+                             df['營收'] / df['sup_revenue'] * df['系統使用費'])
+df['系統使用費_alloc'].fillna(0, inplace=True)
+
+df['企採註記'] = np.where((df['原始館別'] == 'CRM') | (df['原始館別'] == '企採團購館') | (df['商品名稱'].str.contains('企採')), 'Y', 'N')
+df['折價券'] = np.where(df['exclusion_tag'] == 'N' , df['無償折扣碼折抵金額'] + df['無償行銷折價券'], 0)
+df['無償活動折現金'] = df['活動折現金'] - df['有償活動折現金']
+df['無償活動打折扣'] = df['活動打折扣'] - df['有償活動打折扣']
+df['活動折價'] = df['個人對品折價券'] + df['無償活動折現金'] + df['無償活動打折扣']
+df['遠傳幣補貼註記'].fillna('N', inplace=True)
+
+# 計算金卡會員返利
+df['金卡會員'] = np.where(df['金卡會員註記'].str.contains('金卡'), 'Y', 'N')
+df['銷貨毛利率'] = np.where((df['營收'] == 0) | (df['銷貨成本'] == 0), 0, (df['營收'] - df['銷貨成本']) / df['營收'])
+df['銷貨毛利率'].fillna(0, inplace=True)
+df['銷貨毛利率'] = round(df['銷貨毛利率'], 2)
+conditions00 = [(df['金卡會員'] == 'Y') & (df['產品歸館後館別'] == '愛買線上購物(SID12停用)'),
+                (df['金卡會員'] == 'Y') & (df['銷貨毛利率'] < 0.07),
+                (df['金卡會員'] == 'Y') & (df['銷貨毛利率'].between(0.07, 0.11)),
+                (df['金卡會員'] == 'Y') & (df['銷貨毛利率'].between(0.12, 0.39)),
+                (df['金卡會員'] == 'Y') & (df['銷貨毛利率'] >= 0.4),
+                (df['銷貨毛利率'] == 0)]
+values00 = [0.01, 0.01, 0.01, 0.03, 0.1, 0]
+df['返利率'] = np.select(conditions00, values00, default=0)
+conditions01 = [(df['exclusion_tag'] == 'Y'), (df['金卡會員'] == 'Y')]
+values01 = ['N', 'Y']
+# noinspection PyTypeChecker
+df['遠傳幣返利分攤註記'] = np.select(conditions01, values01, default='N')
+df['遠傳幣返利'] = np.where(df['遠傳幣返利分攤註記'] == 'Y', round((df['營收'] - df['折價券'] - df['活動折價']) * df['返利率'], 2), 0)
+conditions02 = [(df['遠傳幣返利'] > 1000), (df['遠傳幣返利'] < -1000)]
+values02 = [1000, -1000]
+df['遠傳幣返利'] = np.select(conditions02, values02, default=df['遠傳幣返利'])
+
+# 計算導購的分攤base 自2022/03起 分潤比為0表示不給返利 也就當作未採導購
+conditions03 = [df['導購分潤比'] == 0, (df['導購_美安'] == 'Y'), (df['導購_愛逛街'] == 'Y'), (df['導購_FINDPRICE'] == 'Y'),
+                (df['導購_飛比'] == 'Y'),
+                (df['導購_品購'] == 'Y'), (df['導購_ETTODAY'] == 'Y'), (df['導購_NOWNEWS'] == 'Y'), (df['導購_聖恩'] == 'Y'),
+                (df['導購_聯盟網'] == 'Y'), (df['導購_SHOPBACK'] == 'Y'), (df['導購_宇匯購有錢'] == 'Y'), (df['導購_LINE購物'] == 'Y'),
+                (df['導購_BIGGO'] == 'Y'), (df['導購_ICHANNEL'] == 'Y'), (df['導購_ETC'] == 'Y'), (df['導購_ETAGGO'] == 'Y'),
+                (df['導購_APPLEDAILY'] == 'Y'), (df['導購_APPIER'] == 'Y'), (df['導購_睿點'] == 'Y'), (df['導購_瑞緹'] == 'Y'),
+                (df['導購_美安FRIDAY嚴選'] == 'Y') & (df['原始館別'] == 'friDay嚴選'), (df['導購_心生活'] == 'Y')]
+values03 = ['N', '美安', '愛逛街', 'FINDPRICE', '飛比', '品購', 'ETTODAY', 'NOWNEWS', '聖恩',
+            '聯盟網', 'SHOPBACK', '宇匯購有錢', 'LINE購物', 'BIGGO', 'ICHANNEL', 'ETC',
+            'ETAGGO', 'APPLEDAILY', 'APPIER', '睿點', '瑞緹', '美安friday嚴選', '心生活']
+# noinspection PyTypeChecker
+df['導購'] = np.select(conditions03, values03, default='N')
+df['導購分攤註記'] = np.where((df['導購'] == 'N') | (df['exclusion_tag'] == 'Y'), 'N', 'Y')
+df['導購費用'] = np.where(df['導購分攤註記'] == 'N', 0, round(df['營收'] * df['導購分潤比'], 2))
+
+# 以導購來代表廣宣的管道，避免與其它廣宣重複，要放最後面
+conditions04 = [(df['廣宣APPIER'] == 'Y'), (df['廣宣CRITEO'] == 'Y'), (df['廣宣YAHOO關鍵字'] == 'Y'), (df['廣宣GOOGLE關鍵字'] == 'Y'),
+                (df['廣宣宇匯'] == 'Y'), (df['廣宣EZPRICE'] == 'Y'), (df['廣宣YAHOO消費特區'] == 'Y'), (df['廣宣YAHOOMANTLE'] == 'Y'),
+                (df['廣宣YAHOO原生廣告'] == 'Y'), (df['廣宣YAHOOAUDIANCEAD'] == 'Y'), (df['廣宣FB自投廣告'] == 'Y'),
+                (df['廣宣RTBHOUSE'] == 'Y'), (df['廣宣塔圖'] == 'Y'), (df['廣宣FEEBEE廣告'] == 'Y'), (df['廣宣購有錢廣告'] == 'Y'),
+                (df['廣宣社群_LINE'] == 'Y'), (df['廣宣ADGEEK'] == 'Y'), (df['廣宣ISPOT'] == 'Y'), (df['廣宣_JAG'] == 'Y'),
+                (df['廣宣_CLICKFORCE'] == 'Y'), (df['廣宣_專案SKII'] == 'Y'), (df['廣宣_ICONNECT'] == 'Y'),
+                (df['廣宣_GOOGLE購物廣告'] == 'Y'), (df['廣宣_GOOGLE聯播網'] == 'Y'), (df['廣宣AD2'] == 'Y'),
+                (df['廣宣WAVENET'] == 'Y'), (df['廣宣ASIAPAC'] == 'Y'), (df['導購_BIGGO'] == 'Y'), (df['導購_LINE購物'] == 'Y')]
+values04 = ['APPIER', 'CRITEO', 'YAHOO', 'GOOGLE', '宇匯', 'EZPRICE', 'YAHOO', 'YAHOO', 'YAHOO', 'YAHOO', 'FB',
+            'RTBHOUSE', '塔圖', 'FEEBEE', '購有錢', '社群_LINE', 'ADGEEK', 'ISPOT', 'JAG', 'CLICKFORCE', 'SKII', 'ICONNECT',
+            'GOOGLE', 'GOOGLE', 'ad2', 'wavenet', 'asiapac', 'BIGGO', 'LINE購物']
+# noinspection PyTypeChecker
+df['廣宣'] = np.select(conditions04, values04, default='N')
+df['廣宣分攤註記'] = np.where((df['廣宣'] == 'N') | (df['exclusion_tag'] == 'Y'), 'N', 'Y')
+
+# 全站分攤含企採訂單，要排企採的費用分攤要多加企採註記的條件
+df['全站分攤註記'] = np.where(df['exclusion_tag'] == 'Y', 'N', 'Y')
+df['全站分攤註記_排企採'] = np.where(df['企採註記'] == 'Y', 'N', df['全站分攤註記'])
+df['SOGO分攤註記'] = np.where(df['商店類別'] == 'B2B-SOGO', 'Y', 'N')
+df['愛買分攤註記'] = np.where(df['report_館別'] == '愛買', 'Y', 'N')
+df['愛買分攤註記_排企採'] = np.where(df['企採註記'] == 'Y', 'N', df['愛買分攤註記'])
+conditions06 = [(df['exclusion_tag'] == 'Y'), (df['金流手續費'] == 0), (df['report_館別'] == '愛買')]
+values06 = ['N', 'N', 'N']
+# noinspection PyTypeChecker
+df['金流手續費分攤註記'] = np.select(conditions06, values06, default='Y')
+conditions07 = [(df['exclusion_tag'] == 'Y'), (df['配送方式'] == '寄售(進倉)'), (df['配送方式'] == '買斷')]
+values07 = ['N', 'Y', 'Y']
+# noinspection PyTypeChecker
+df['logistic分攤註記'] = np.select(conditions07, values07, default='N')
+
+# 對應該年度iPhone的型號以及全虹小米來設定rebate的註記
+df['營收年'] = df['Month'].astype('str').str[:4]
+conditions09 = [(df['營收年'] == '2020') & (df['DEVICETEAMB2B'] == 'N') & (df['供應商名稱'] == '全虹企業股份有限公司') &
+                (df['商品名稱'].str.contains('iPhone 11')) & ((df['營收'] / df['淨出貨數量']) >= 20000),
+                (df['營收年'] == '2020') & (df['DEVICETEAMB2B'] == 'N') & (df['供應商名稱'] == '全虹企業股份有限公司') &
+                (df['商品名稱'].str.contains('iPhone 11')) & ((df['營收'] / df['淨出貨數量']) <= -20000),
+                (df['營收年'] == '2021') & (df['DEVICETEAMB2B'] == 'N') & (df['供應商名稱'] == '全虹企業股份有限公司') &
+                (df['商品名稱'].str.contains('iPhone 12')) & ((df['營收'] / df['淨出貨數量']) >= 20000),
+                (df['營收年'] == '2021') & (df['DEVICETEAMB2B'] == 'N') & (df['供應商名稱'] == '全虹企業股份有限公司') &
+                (df['商品名稱'].str.contains('iPhone 12')) & ((df['營收'] / df['淨出貨數量']) <= -20000),
+                (df['營收年'] == '2022') & (df['Month'].between(202201, 202204)) & (df['DEVICETEAMB2B'] == 'N') &
+                (df['供應商名稱'] == '全虹企業股份有限公司') & (df['商品名稱'].str.contains('iPhone 13')) &
+                ((df['營收'] / df['淨出貨數量']) >= 20000),
+                (df['營收年'] == '2022') & (df['Month'].between(202201, 202204)) & (df['DEVICETEAMB2B'] == 'N') &
+                (df['供應商名稱'] == '全虹企業股份有限公司') & (df['商品名稱'].str.contains('iPhone 13')) &
+                ((df['營收'] / df['淨出貨數量']) <= -20000),
+                (df['營收年'] == '2022') & (df['Month'] >= 202205) & (df['DEVICETEAMB2B'] == 'N') &
+                (df['供應商名稱'] == '遠傳電信股份有限公司') & (df['商品名稱'].str.contains('iPhone 13')) &
+                ((df['營收'] / df['淨出貨數量']) >= 20000),
+                (df['營收年'] == '2022') & (df['Month'] >= 202205) & (df['DEVICETEAMB2B'] == 'N') &
+                (df['供應商名稱'] == '遠傳電信股份有限公司') & (df['商品名稱'].str.contains('iPhone 13')) &
+                ((df['營收'] / df['淨出貨數量']) <= -20000),
+                (df['營收年'] == '2022') & (df['Month'] >= 202205) & (df['DEVICETEAMB2B'] == 'N') &
+                (df['供應商名稱'] == '遠傳電信股份有限公司') & (df['商品名稱'].str.contains('iPhone 14')) &
+                ((df['營收'] / df['淨出貨數量']) >= 20000),
+                (df['營收年'] == '2022') & (df['Month'] >= 202205) & (df['DEVICETEAMB2B'] == 'N') &
+                (df['供應商名稱'] == '遠傳電信股份有限公司') & (df['商品名稱'].str.contains('iPhone 14')) &
+                ((df['營收'] / df['淨出貨數量']) <= -20000),
+                (df['營收年'] == '2022') & (df['Month'] >= 202205) & (df['DEVICETEAMB2B'] == 'N') &
+                (df['供應商名稱'] == '遠傳電信股份有限公司') & (df['商品名稱'].str.contains('iPhone 15')) &
+                ((df['營收'] / df['淨出貨數量']) >= 20000),
+                (df['營收年'] == '2022') & (df['Month'] >= 202205) & (df['DEVICETEAMB2B'] == 'N') &
+                (df['供應商名稱'] == '遠傳電信股份有限公司') & (df['商品名稱'].str.contains('iPhone 15')) &
+                ((df['營收'] / df['淨出貨數量']) <= -20000)]
+values09 = ['Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y','Y','Y']
+# noinspection PyTypeChecker
+df['全虹iPhone註記'] = np.select(conditions09, values09, default='N')
+df['小米旗艦館註記'] = np.where((df['供應商名稱'] == '全虹企業股份有限公司') & (df['主目錄第一層目錄'] == '小米生態鏈'), 'Y', 'N')
+
+# 關企佣金的分攤註記
+conditions10 = [(df['上層供應商名稱'].str.contains('太平洋')), (df['上層供應商名稱'].str.contains('遠東百貨')),
+                (df['上層供應商名稱'].str.contains('遠東都會')),
+                (df['遠百廠商'] == '遠東百貨')]
+values10 = ['SOGO', '遠東百貨', '遠東都會', '遠東百貨']
+# noinspection PyTypeChecker
+df['affiliate註記'] = np.select(conditions10, values10, default='N')
+
+# 賣場的註記
+conditions11 = [(df['report_部別'] == '超商商品'), (df['賣場'] == '企採_Jeffrey'), (df['賣場'] == '企採_Tifa'), (df['賣場'] == '企採_Rita'), (df['賣場'] == '專人企採'),
+                (df['訂單編號'] == '20230224152829'),(df['賣場'] == 'Co-Brand再轉轉'),(df['賣場'] == '網紅看盤'), (df['賣場'] == 'B型'),(df['賣場'].str.contains('B型_品牌網', na=False)),
+                (df['賣場'].str.contains('B型_員購網', na=False)),(df['report_部別'] == '愛買'), ]
+values11 = ['專人企採', '專人企採', '專人企採', '專人企採', '專人企採', '專人企採', 'Co-Brand再轉轉', '網紅看盤', 'B型', 'B型', '員購網', '愛買']
+# noinspection PyTypeChecker
+df['賣場註記'] = np.select(conditions11, values11, default='3+1網')
+
+# 各種分攤分母計算
+df['愛買折價券tot'] = df.groupby(['愛買分攤註記']).折價券.transform(np.sum)
+df['遠傳幣返利tot'] = np.where((df['遠傳幣返利分攤註記'] == 'Y'), df.groupby(['遠傳幣返利分攤註記']).遠傳幣返利.transform(np.sum), 0)
+df['logisticcogstot'] = np.where(df['logistic分攤註記'] == 'N', 0, df.groupby(['logistic分攤註記']).銷貨成本.transform(np.sum))
+df['全站營收tot'] = np.where(df['全站分攤註記'] == 'N', 0, df.groupby(['全站分攤註記']).營收.transform(np.sum))
+df['全站營收_排企採tot'] = np.where(df['全站分攤註記_排企採'], df.groupby(['全站分攤註記_排企採']).營收.transform(np.sum), 0)
+df['SOGO營收tot'] = np.where(df['SOGO分攤註記'] == 'N', 0, df.groupby(['SOGO分攤註記']).營收.transform(np.sum))
+df['愛買營收tot'] = np.where(df['愛買分攤註記'] == 'N', 0, df.groupby(['愛買分攤註記']).營收.transform(np.sum))
+df['愛買營收_排企採tot'] = np.where(df['愛買分攤註記_排企採'] == 'N', 0, df.groupby(['愛買分攤註記_排企採']).營收.transform(np.sum))
+df['廣宣營收tot'] = np.where(df['廣宣分攤註記'] == 'N', 0, df.groupby(['廣宣分攤註記']).營收.transform(np.sum))
+df['全站導購費用tot'] = np.where(df['導購分攤註記'] == 'N', 0, df.groupby(['導購']).導購費用.transform(np.sum))
+df['愛買導購費用tot'] = np.where(df['愛買分攤註記'] == 'Y', df.groupby(['原始館別', '導購']).導購費用.transform(np.sum), 0)
+df['金流手續費tot'] = np.where(df['金流手續費分攤註記'] == 'N', 0, df.groupby(['金流手續費分攤註記']).金流手續費.transform(np.sum))
+df['全虹rebate_iPhonetot'] = np.where(df['全虹iPhone註記'] == 'N', 0, df.groupby(['全虹iPhone註記']).銷貨成本.transform(np.sum))
+df['全虹rebate_mitot'] = np.where(df['小米旗艦館註記'] == 'N', 0, df.groupby(['小米旗艦館註記']).銷貨成本.transform(np.sum))
+df['關企佣金營收tot'] = np.where(df['affiliate註記'] == 'N', 0, df.groupby(['affiliate註記']).營收.transform(np.sum))
+
+# 帳上數分攤
+df['平台手續費_alloc'] = np.where(df['SOGO分攤註記'] == 'N', 0, df['營收'] / df['SOGO營收tot'] * df['SOGO_平台手續費_actual'])
+df['折價券_全站'] = np.where(df['全站分攤註記'] == 'Y', df['折價券'], 0)
+df['折價券_愛買'] = np.where(df['愛買分攤註記'] == 'N', 0, df['折價券'] / df['愛買折價券tot'] * df['折價券_愛買_actual'])
+df['折價券_alloc'] = df['折價券_全站'] + df['折價券_愛買']
+df['遠傳幣返利_alloc'] = np.where(df['遠傳幣返利分攤註記'] == 'Y', df['遠傳幣返利'] / df['遠傳幣返利tot'] * df['遠傳幣返利_B2C_actual'], 0)
+df['遠傳幣給點_愛買b'] = np.where(df['愛買分攤註記_排企採'] == 'Y', df['營收'] / df['愛買營收_排企採tot'] * df['遠傳幣給點_愛買b_actual'], 0)
+df['遠傳幣給點'] = np.where(df['全站分攤註記_排企採'] == 'Y', df['營收'] / df['全站營收_排企採tot'] * df['遠傳幣給點_B2C_actual'], 0)
+df['遠傳幣給點_alloc'] = df['遠傳幣給點'] + df['遠傳幣給點_愛買b']
+df['全虹rebate_iPhone_period'] = np.where(df['全虹iPhone註記'] == 'N', 0,
+                                        df['銷貨成本'] / df['全虹rebate_iPhonetot'] * df['iPhone_rebate_by_period_actual'])
+df['全虹rebate_mi_period'] = np.where(df['小米旗艦館註記'] == 'N', 0,
+                                    df['銷貨成本'] / df['全虹rebate_mitot'] * df['mi_rebate_by_period_actual'])
+df['全虹rebate_period_alloc'] = df['全虹rebate_iPhone_period'] + df['全虹rebate_mi_period']
+df['logistic_alloc'] = np.where(df['logistic分攤註記'] == 'N', 0,
+                                df['銷貨成本'] / df['logisticcogstot'] * df['logistic_actual'])
+df['金流手續費_alloc'] = np.where(df['金流手續費分攤註記'] == 'N', 0, df['金流手續費'] / df['金流手續費tot'] * df['金流手續費_actual'])
+df['廣宣費用_alloc'] = np.where(df['廣宣分攤註記'] == 'N', 0, df['營收'] / df['廣宣營收tot'] * df['廣宣_actual'])
+
+
+# 導購費用分攤
+def func(commission):
+    if commission['全站導購費用tot'] == 0:
+        return 0
+    elif commission['導購'] == '美安':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['美安導購']
+    elif commission['導購'] == 'FINDPRICE':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['FINDPRICE導購']
+    elif commission['導購'] == '飛比':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['飛比導購']
+    elif commission['導購'] == '愛逛街':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['愛逛街導購']
+    elif commission['導購'] == '品購':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['品購導購']
+    elif commission['導購'] == '聯盟網':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['聯盟網導購']
+    elif commission['導購'] == '聖恩':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['聖恩導購']
+    elif commission['導購'] == 'SHOPBACK':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['SHOPBACK導購']
+    elif commission['導購'] == '宇匯購有錢':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['宇匯購有錢導購']
+    elif commission['導購'] == 'ETTODAY':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['ETTODAY導購']
+    elif commission['導購'] == 'NOWNEWS':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['NOWNEWS導購']
+    elif commission['導購'] == 'BIGGO':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['BIGGO導購']
+    elif commission['導購'] == 'LINE購物':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['LINE購物導購']
+    elif commission['導購'] == 'ICHANNEL':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['ICHANNEL導購']
+    elif commission['導購'] == 'ETC':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['ETC導購']
+    elif commission['導購'] == 'ETAGGO':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['ETAGGO導購']
+    elif commission['導購'] == 'APPLEDAILY':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['APPLEDAILY導購']
+    elif commission['導購'] == '睿點':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['睿點導購']
+    elif commission['導購'] == '美安friday嚴選':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['美安friday嚴選導購']
+    elif commission['導購'] == '心生活':
+        return commission['導購費用'] / commission['全站導購費用tot'] * commission['心生活導購']
+    else:
+        return 0
+
+
+df['全站導購費用'] = df.apply(func, axis=1)
+df['全站導購費用'].fillna(0, inplace=True)
+df['愛買SHOPBACK導購費用'] = np.where((df['愛買分攤註記'] == 'Y') & (df['導購'] == 'SHOPBACK'),
+                                df['導購費用'] / df['愛買導購費用tot'] * df['愛買SHOPBACK導購'], 0)
+df['愛買LINE導購費用'] = np.where((df['愛買分攤註記'] == 'Y') & (df['導購'] == 'LINE購物'),
+                            df['導購費用'] / df['愛買導購費用tot'] * df['愛買LINE導購'], 0)
+df['愛買導購費用'] = df['愛買SHOPBACK導購費用'] + df['愛買LINE導購費用']
+df['愛買導購費用'].fillna(0, inplace=True)
+df['沛星導購費用'] = np.where(df['全站分攤註記'] == 'N', 0, df['營收'] / df['全站營收tot'] * df['沛星導購'])
+df['導購費用_alloc'] = df['全站導購費用'] - df['愛買導購費用'] + df['沛星導購費用']
+df['導購費用tot'] = np.where(df['全站分攤註記'] == 'N', 0, df.groupby(['Month']).導購費用_alloc.transform(np.sum))
+
+# 關企佣金分攤計算
+df['關企佣金_遠東百貨'] = np.where(df['affiliate註記'] == '遠東百貨', df['營收'] / df['關企佣金營收tot'] * df['遠東百貨關企'], 0)
+df['關企佣金_SOGO'] = np.where(df['affiliate註記'] == 'SOGO', df['營收'] / df['關企佣金營收tot'] * df['SOGO關企'], 0)
+df['關企佣金_遠東都會'] = np.where(df['affiliate註記'] == '遠東都會', df['營收'] / df['關企佣金營收tot'] * df['遠東都會關企'], 0)
+df['關企佣金_alloc'] = df['關企佣金_遠東百貨'] + df['關企佣金_SOGO'] + df['關企佣金_遠東都會']
+df['關企佣金tot'] = df.groupby(['Month']).關企佣金_alloc.transform(np.sum)
+
+df['其它行銷_愛買補貼'] = np.where(df['愛買分攤註記'] == 'Y', df['營收'] / df['愛買營收tot'] * df['其它行銷_愛買補貼_actual'], 0)
+df['其它行銷_愛買補貼'].fillna(0, inplace=True)
+df['其它行銷費用_actual'] = np.where(df['全站分攤註記_排企採'] == 'Y', df['行銷費用_actual'] - df['廣宣_actual'] - df['導購費用tot'] -
+                               df['關企佣金tot'] - df['其它行銷_愛買補貼_actual'], 0)
+df['其它行銷費用'] = np.where(df['全站分攤註記_排企採'] == 'N', 0, df['營收'] / df['全站營收_排企採tot'] * df['其它行銷費用_actual'])
+df['其它行銷費用_alloc'] = df['其它行銷_愛買補貼'] + df['其它行銷費用']
+df['公關費用_alloc'] = np.where(df['全站分攤註記_排企採'] == 'N', 0, df['營收'] / df['全站營收_排企採tot'] * df['公關費用_actual'])
+
+# 遠傳幣放大術補貼
+df['遠傳幣補貼'] = np.where(df['遠傳幣補貼註記'] == 'Y', df['遠傳幣加碼'], 0)
+
+# 刪除多餘的欄位
+df.drop(['營收年', '商店類別', '訂單日', '沛星導購', '廣宣_actual', '折價券_愛買_actual', '金流手續費_actual', 'logistic_actual',
+         '營收年月', 'iPhone_rebate_by_period_actual', 'mi_rebate_by_period_actual',
+         '行銷費用_actual', '公關費用_actual', 'sup_revenue', 'sup_cogs', '愛買_平台手續費_actual',
+         '購快樂_平台手續費_actual', 'SOGO_平台手續費_actual', '愛買折價券tot', 'logisticcogstot', '全站營收tot',
+         '愛買營收tot', '愛買營收_排企採tot','供應商', '活動贊助費', '銷售獎勵金', '年度銷售獎勵金', '年度銷售獎勵金_C999', '後扣',
+         'SOGO營收tot', '廣宣營收tot', '全站導購費用tot', '愛買導購費用tot', '金流手續費tot',
+         '全虹rebate_iPhonetot', '全虹rebate_mitot', '關企佣金營收tot',
+         '折價券_全站', '折價券_愛買', '全虹rebate_iPhone_period','全虹rebate_mi_period',
+         '遠傳幣返利_B2C_actual', '遠傳幣返利_愛買_actual', '遠傳幣返利_SOGO_actual','遠傳幣返利_購快樂_actual',
+         '遠傳幣給點_B2C_actual', '遠傳幣給點_愛買a_actual', '遠傳幣給點_SOGO_actual','遠傳幣給點_購快樂_actual',
+         '遠傳幣給點_愛買b_actual', '遠傳幣返利', '遠傳幣給點_愛買b','遠傳幣給點', '其它行銷費用_actual', '導購費用tot',
+         '關企佣金tot', '導購_美安', '導購_愛逛街', '導購_FINDPRICE', '導購_飛比', '導購_品購', '導購_ETTODAY',
+         '導購_NOWNEWS', '導購_聖恩', '導購_聯盟網', '導購_SHOPBACK', '導購_宇匯購有錢', '導購_LINE購物', '導購_BIGGO',
+         '導購_ICHANNEL', '導購_ETC', '導購_ETAGGO', '導購_APPLEDAILY', '導購_APPIER', '導購_睿點', '導購_瑞緹',
+         '導購_美安FRIDAY嚴選', '導購_心生活', '廣宣APPIER', '廣宣CRITEO', '廣宣YAHOO關鍵字', '廣宣GOOGLE關鍵字', '廣宣宇匯',
+         '廣宣EZPRICE', '廣宣YAHOO消費特區', '廣宣YAHOOMANTLE', '廣宣YAHOO原生廣告', '廣宣YAHOOAUDIANCEAD', '廣宣FB自投廣告',
+         '廣宣RTBHOUSE', '廣宣塔圖', '廣宣FEEBEE廣告', '廣宣LINE購物', '廣宣購有錢廣告', '廣宣社群_LINE', '廣宣ADGEEK',
+         '廣宣ISPOT', '廣宣_JAG', '廣宣_CLICKFORCE', '廣宣_專案SKII', '廣宣BIGGO廣告', '廣宣_ICONNECT',
+         '廣宣_GOOGLE購物廣告', '廣宣_GOOGLE聯播網', '廣宣AD2', '廣宣WAVENET', '廣宣ASIAPAC', '系統使用費',
+         '其它行銷_愛買補貼_actual', '其它行銷費用', '其它行銷_愛買補貼', '產品歸館後館別_dep', '特殊邏輯', '是否目標清單',
+         'LINE_ID', 'RN', '商開', 'LCM_actual', '愛買SHOPBACK導購', '愛買LINE導購', '沛星導購', '美安導購', 'FINDPRICE導購',
+         '飛比導購', '愛逛街導購', '品購導購', '聯盟網導購', '聖恩導購', 'SHOPBACK導購', '宇匯購有錢導購', 'ETTODAY導購',
+         'NOWNEWS導購', 'BIGGO導購', 'LINE購物導購', 'ICHANNEL導購', 'ETC導購', 'ETAGGO導購', 'APPLEDAILY導購', '睿點導購',
+         '美安friday嚴選導購', '心生活導購', '遠東百貨關企', 'SOGO關企', '遠東都會關企', '關企佣金_遠東百貨', '關企佣金_SOGO',
+         '關企佣金_遠東都會', '愛買SHOPBACK導購費用', '愛買LINE導購費用', '活動打折扣', '活動折現金', '有償活動折現金', '有償活動打折扣',
+         'ERPDATE', 'ADJUSTDATE', '遠傳幣返利tot', '全站營收_排企採tot'], axis=1, inplace=True)
+
+# 重新命名欄位
+df.rename(columns={'F幣扣點AMOUNT': '遠傳幣扣點', 'F幣還點AMOUNT': '遠傳幣還點', 'FREE_YSDT_COIN': '遠傳幣遠時無償',
+                   'PAID_OTHER_COIN': '遠傳幣其它有償', 'PAID_YSDT_COIN': '遠傳幣遠時有償', 'NEW_HOUSE_ID': '歸館後館別代碼',
+                   'Month': '營收年月'}, inplace=True)
+
+# 連結目的MySQL database
+db_pw = 'Vance_hsu_@123'
+engine = create_engine('mysql+pymysql://vance_hsu:%s@172.25.2.28:3306/raw_data?charset=utf8mb4' % urlquote(db_pw))
+df.to_sql('lifecycle_2023_new2', engine, if_exists='append', index=False)
+engine.dispose()
+print('success')
