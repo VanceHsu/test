@@ -1,0 +1,47 @@
+#指定使用資料庫
+USE share_data;
+#新增TABLE
+CREATE TABLE lifecycle_20221109killed LIKE raw_data.lifecycle_2022;
+#插入資料
+INSERT INTO lifecycle_20221109killed SELECT * FROM raw_data.lifecycle_2022;
+#刪除資料
+DELETE FROM lifecycle WHERE `營收年月` between 202308 and 202312;
+#刪除資料安全開關，0可以刪；1不可以刪
+SET SQL_SAFE_UPDATES=0;
+#移除TABLE
+DROP TABLE lifecycle_2023_new3;
+#修改TABLE裡的資料
+UPDATE lifecycle_2022 SET `產品歸館後館別`="筆電 / 週邊 / 電玩 / 攝影",`歸館後館別代碼`=0,`商店類別`="B2C",`主目錄館別ID`=0,
+                          `主目錄館別`="筆電 / 週邊 / 電玩 / 攝影",`主目錄第一層目錄ID`=170498,
+                          `主目錄第一層目錄`="網通/監控設備",`report_館別`="筆電 / 週邊 / 電玩 / 攝影",
+                          `report_部別`="資訊休閒部" WHERE `訂單編號`="20220515966157" ;
+UPDATE lifecycle SET `遠傳幣補貼`=0 WHERE `遠傳幣補貼` IS NULL ;
+#顯示設定參數
+SHOW VARIABLES LIKE "%innodb_buffer_pool_size%";
+#重新命名TABLE
+RENAME TABLE lifecycle_2023 TO lifecycle_2022_20220411killed;
+#刪除欄位
+ALTER TABLE lifecycle DROP `遠傳幣補貼`;
+#新增欄位
+ALTER TABLE share_data.lifecycle
+ADD COLUMN `賣場註記` text AFTER `EC_type`;
+#修改欄位資料型態
+ALTER TABLE lifecycle_2019 MODIFY `折價券碼名稱` text;
+#修改欄位資料名稱及型態
+ALTER TABLE lifecycle_2023_new change `Month` `營收年月` text;
+#新增TEMP TABLE
+CREATE TEMPORARY TABLE f_coin_a
+SELECT DISTINCT`交易序號`
+FROM lifecycle_2021;
+#移除TEMP TABLE
+DROP TEMPORARY TABLE IF EXISTS f_coin_a;
+SELECT `營收年月`,CASE WHEN `營收年月` IS NOT NULL THEN NULL END `EC_type`,`原始館別`,`產品歸館後館別`,
+`歸館後館別代碼`,`report_館別`,`report_部別`,`交易序號`,`訂單編號`,`會員編號`,`主目錄館別ID`,`主目錄館別`,
+`主目錄第一層目錄ID`,`主目錄第一層目錄`,`發票聯別`,`商品編號`,`商品名稱`,`供應商名稱`,`折價券分類`,`折扣碼分類`,
+`折價券碼名稱`,`FET_PROMOTION_FLAG`,`心生活_FLAG`,`大遠傳_FLAG`,`導購`,`廣宣`,`exclusion_tag`,`淨出貨數量`,
+`業績_訂單銷售金額`,`營收`,`平台手續費_alloc`,`折價券_alloc`,`遠傳幣返利_alloc`+`遠傳幣給點_alloc`as "遠傳幣",
+`遠傳幣補貼`,`系統使用費_alloc`,`銷貨成本`,`後扣_alloc`,`全虹rebate_period_alloc`,`logistic_alloc`,
+`金流手續費_alloc`,`導購費用_alloc`,`廣宣費用_alloc`,`關企佣金_alloc`,`其它行銷費用_alloc`,`公關費用_alloc`,
+`行銷追蹤碼2`,`行銷追蹤碼3`,`遠傳幣加碼`,`個人對品折價券`,`無償活動打折扣`,`無償活動折現金`,`活動折價`
+FROM raw_data.lifecycle_2023_new
+WHERE `營收年月` = 202301
