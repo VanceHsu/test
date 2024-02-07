@@ -1,0 +1,35 @@
+import pandas as pd
+from sqlalchemy import create_engine
+from urllib.parse import quote_plus as urlquote
+
+db_pw = 'Vance_hsu_@123'
+engine = create_engine('mysql+pymysql://vance_hsu:%s@172.25.2.28:3306/raw_data?charset=utf8' % urlquote(db_pw))
+sqla = '''
+SELECT `營收年月`,`report_部別`,`report_館別`,
+       CASE WHEN `序號分類` IN ("折價券序號","雙十一序號") THEN "無敵"
+            WHEN `序號分類`="Others" and `無償折扣碼折抵金額`!=0 THEN "非無敵_折扣碼"
+            WHEN `序號分類`="Others" and `無償行銷折價券`!=0 THEN "非無敵_折價券"
+            WHEN `活動折價`!=0 THEN "活動折價"
+            WHEN `無償折扣碼折抵金額`!=0 THEN "非無敵_折扣碼"
+            WHEN `無償行銷折價券`!=0 THEN "非無敵_折價券"
+            ELSE "未使用"
+        END "分群",
+       COUNT(DISTINCT `訂單編號`)"訂單數",SUM(`淨出貨數量`) "淨出貨數量",SUM(`營收`) "營收",
+       SUM(`有償行銷折價券`) "有償折價券",SUM(`有償折扣碼折抵金額`) "有償折扣碼",SUM(`無償行銷折價券`) "無償折價券",SUM(`無償折扣碼折抵金額`) "無償折扣碼",
+       SUM(`折價券_alloc`-`無償行銷折價券`-`無償折扣碼折抵金額`) "愛買折價券",SUM(`折價券_alloc`) "折價券",SUM(`活動折價`) "活動折價",
+       SUM(`個人對品折價券`) "對品折價券",SUM(`無償活動折現金`) "無償活動折現金",SUM(`無償活動打折扣`)"無償活動打折扣",SUM(`遠傳幣返利_alloc`+`遠傳幣給點_alloc`) "遠傳幣",
+       SUM(`遠傳幣補貼`) "遠傳幣補貼",SUM(`系統使用費_alloc`) "系統使用費",SUM(`銷貨成本`) "銷貨成本",SUM(`後扣_alloc`) "後扣",SUM(`全虹rebate_period_alloc`) "全虹rebate_period",
+       SUM(`logistic_alloc`) "logistic",SUM(`金流手續費_alloc`) "金流手續費", SUM(`導購費用_alloc`) "導購費用",SUM(`廣宣費用_alloc`) "廣宣費用",
+       SUM(`關企佣金_alloc`) "關企佣金",SUM(`其它行銷費用_alloc`) "其它行銷費用",SUM(`公關費用_alloc`) "公關費用"
+FROM coupon_20231229
+WHERE 1=1
+AND `商品類型`!="贈品"
+AND `原始館別`!="企採團購館"
+AND exclusion_tag="N"
+GROUP BY 1,2,3,4
+'''
+dfa = pd.read_sql_query(sqla, engine)
+engine.dispose()
+dfa.to_excel(r'C:\Users\vance_hsu\Desktop\coupon2023.xlsx')
+
+print('success')
