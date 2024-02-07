@@ -1,0 +1,58 @@
+import cx_Oracle
+import pandas as pd
+import numpy as np
+
+connection = cx_Oracle.connect('vance_hsu/vance_hsu_123@10.97.15.146:1521/ISDB')
+sql = '''
+Select TO_CHAR(ADJUSTDATE,'YYYYMM'),業績原始館別,銷售館別,訂單編號,商品名稱,金卡會員註記,銷貨收入,銷貨成本,無償折價券,無償折扣碼,
+       活動打折扣,活動折現金,有償活動打折扣,有償活動折現金,個人對品折價券
+From DM_EC.V_403_ALL
+WHERE TO_CHAR(ADJUSTDATE,'YYYYMM') = 202312
+'''
+df = pd.read_sql(sql, con=connection)
+connection.close()
+df['Month'] = "202312"
+df['Month'] = df['Month'].astype('int64')
+df2 = pd.read_excel(r'C:\Users\vance_hsu\Desktop\vance_desktop\Data Allocate\BO\actual.xlsx')
+df = pd.merge(df, df2, on=['Month'], how='left')
+df['exclusion_tag'] = np.where((df['銷售館別'].isin(['金卡會員專屬優惠', 'IT', '包材測試館', '作廢商品', '德誼專館',
+                                '快速到貨館', 'friDay嚴選', '包材館', '送禮館','新品上架','企採團購館'])) | (df['商品名稱'].str.contains('跨超商咖啡')), 'Y', 'N')
+df['企採註記'] = np.where((df['業績原始館別'] == 'CRM') | (df['業績原始館別'] == '企採團購館') | (df['商品名稱'].str.contains('企採')), 'Y', 'N')
+df['折價券'] = df['無償折價券'] + df['無償折扣碼']
+df['活動折價'] = (df['活動打折扣'] - df['活動折現金']) + (df['有償活動打折扣'] - df['有償活動折現金'])
+df['金卡會員'] = np.where(df['金卡會員註記'].str.contains('金卡'), 'Y', 'N')
+df['銷貨毛利率'] = np.where((df['銷貨收入'] == 0) | (df['銷貨成本'] == 0), 0, (df['銷貨收入'] - df['銷貨成本']) / df['銷貨收入'])
+df['銷貨毛利率'].fillna(0, inplace=True)
+df['銷貨毛利率'] = round(df['銷貨毛利率'], 2)
+conditions00 = [(df['金卡會員'] == 'Y') & (df['銷售館別'] == '愛買線上購物(SID12停用)'),
+                (df['金卡會員'] == 'Y') & (df['銷貨毛利率'] < 0.07),
+                (df['金卡會員'] == 'Y') & (df['銷貨毛利率'].between(0.07, 0.11)),
+                (df['金卡會員'] == 'Y') & (df['銷貨毛利率'].between(0.12, 0.39)),
+                (df['金卡會員'] == 'Y') & (df['銷貨毛利率'] >= 0.4),
+                (df['銷貨毛利率'] == 0)]
+values00 = [0.01, 0.01, 0.01, 0.03, 0.1, 0]
+df['返利率'] = np.select(conditions00, values00, default=0)
+conditions01 = [(df['exclusion_tag'] == 'Y'), (df['金卡會員'] == 'Y')]
+values01 = ['N', 'Y']
+# noinspection PyTypeChecker
+df['遠傳幣返利分攤註記'] = np.select(conditions01, values01, default='N')
+df['遠傳幣返利'] = np.where(df['遠傳幣返利分攤註記'] == 'Y', round((df['銷貨收入'] - df['折價券'] - df['活動折價']) * df['返利率'], 2), 0)
+conditions02 = [(df['遠傳幣返利'] > 1000), (df['遠傳幣返利'] < -1000)]
+values02 = [1000, -1000]
+df['遠傳幣返利'] = np.select(conditions02, values02, default=df['遠傳幣返利'])
+# noinspection PyTypeChecker
+df['全站分攤註記'] = np.where(df['exclusion_tag'] == 'Y', 'N', 'Y')
+df['全站分攤註記_排企採'] = np.where(df['企採註記'] == 'Y', 'N', df['全站分攤註記'])
+df['愛買分攤註記'] = np.where((df['銷售館別'] == '愛買線上購物(SID12停用)') | (df['銷售館別'] == '愛買線上購物'), 'Y', 'N')
+df['愛買分攤註記_排企採'] = np.where(df['企採註記'] == 'Y', 'N', df['愛買分攤註記'])
+df['全站遠傳幣返利tot'] = np.where((df['遠傳幣返利分攤註記'] == 'Y'), df.groupby(['遠傳幣返利分攤註記']).遠傳幣返利.transform(np.sum), 0)
+df['全站營收_排企採tot'] = np.where(df['全站分攤註記_排企採'] == 'N', 0, df.groupby(['全站分攤註記_排企採']).銷貨收入.transform(np.sum))
+df['愛買營收_排企採tot'] = np.where(df['愛買分攤註記_排企採'] == 'N', 0, df.groupby(['愛買分攤註記_排企採']).銷貨收入.transform(np.sum))
+df['遠傳幣返利_alloc'] = np.where((df['遠傳幣返利分攤註記'] == 'Y'), df['遠傳幣返利'] / df['全站遠傳幣返利tot'] * df['遠傳幣返利_全站_actual'], 0)
+df['遠傳幣給點_alloc'] = np.where(df['全站分攤註記_排企採'] == 'Y', df['銷貨收入'] / df['全站營收_排企採tot'] * df['遠傳幣給點_全站_actual'], 0)
+df['遠傳幣給點_愛買_alloc'] = np.where(df['愛買分攤註記_排企採'] == 'Y', df['銷貨收入'] / df['愛買營收_排企採tot'] * df['遠傳幣給點_愛買_actual'], 0)
+fet_coin = pd.pivot_table(df, index = ['銷售館別'], values = ['遠傳幣返利_alloc', '遠傳幣給點_alloc', '遠傳幣給點_愛買_alloc'],
+                          aggfunc = [np.sum])
+
+fet_coin.to_excel(r'C:\Users\vance_hsu\Desktop\f_coin_202312.xlsx')
+print('success')
