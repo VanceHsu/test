@@ -1,61 +1,251 @@
-import cx_Oracle
-import pandas as pd
-import numpy as np
+USE raw_data;
+SELECT `營收年月`,`report_部別`,`導購`,SUM(`營收`),SUM(`導購營收`),SUM(`無償折價券營收`),SUM(心生活營收),SUM(`導購折價券心生活營收`),SUM(`企採營收`)
+FROM (SELECT `營收年月`,`report_部別`,`導購`,`營收`,CASE
+                              WHEN `導購`!="N" THEN `營收`
+                              ELSE 0
+                              END "導購營收",CASE
+                                            WHEN (`無償折扣碼折抵金額`+`無償行銷折價券`)!=0 THEN `營收`
+                                            ELSE 0
+                                            END "無償折價券營收",CASE
+                                                                WHEN `心生活_FLAG`="Y" or `FET_PROMOTION_FLAG`="Y" THEN `營收`
+                                                                ELSE 0
+                                                                END "心生活營收",CASE
+                                                                                WHEN `導購`!="N" AND (`無償折扣碼折抵金額`+`無償行銷折價券`)!=0 AND (`心生活_FLAG`="Y" or `FET_PROMOTION_FLAG`="Y") THEN `營收`
+                                                                                ELSE 0
+                                                                                END "導購折價券心生活營收",CASE
+                                                                                                         WHEN `原始館別`="企採團購館" AND `導購`="N" AND (`無償折扣碼折抵金額`+`無償行銷折價券`)=0 AND (`心生活_FLAG`="N" AND `FET_PROMOTION_FLAG`="N") THEN `營收`
+                                                                                                         ELSE 0
+                                                                                                         END "企採營收"
+        FROM lifecycle_2022
+        WHERE `EC_type`="B2C" AND `exclusion_tag`="N" AND `營收年月` IN ("202202","202204")) AS t
+GROUP BY `營收年月`,`report_部別`,`導購`;
 
-connection = cx_Oracle.connect('vance_hsu/vance_hsu_123@10.97.15.146:1521/ISDB')
-sql = '''
-Select TO_CHAR(ADJUSTDATE,'YYYYMM'),賣場,業績原始館別,銷售館別,主目錄第一層目錄ID,主目錄第一層目錄,供應商名稱,商品序號,商品名稱,商品類型,售價,成本,SUM(數量) as 數量,
-       SUM(銷貨收入) as 銷貨收入,SUM(銷貨成本) as 銷貨成本,SUM(無償折價券) as 無償折價券,SUM(無償折扣碼) as 無償折扣碼,
-       SUM(活動打折扣) as 活動打折扣,SUM(活動折現金) as 活動折現金,SUM(有償活動打折扣) as 有償活動打折扣,
-       SUM(有償活動折現金) as 有償活動折現金,SUM(個人對品折價券) as 個人對品折價券
-From DM_EC.V_403_ALL
-WHERE TO_CHAR(ADJUSTDATE,'YYYYMM') IN ('202312','202311','202212')
-GROUP BY TO_CHAR(ADJUSTDATE,'YYYYMM'),賣場,業績原始館別,銷售館別,主目錄第一層目錄ID,主目錄第一層目錄,供應商名稱,商品序號,商品名稱,商品類型,售價,成本
-'''
-df = pd.read_sql(sql, con=connection)
-connection.close()
+SELECT `營收年月`,`商品名稱`,`DEVICETEAMB2B`,`導購`,SUM(`營收`)
+FROM lifecycle_2022
+WHERE 1=1
+AND `營收年月` IN ("202202","202204")
+AND `EC_type`="B2C"
+AND `exclusion_tag`="N"
+AND `原始館別`="企採團購館"
+AND `report_部別`="手機平板數位部"
+AND (`無償折扣碼折抵金額`+`無償行銷折價券`)=0
+GROUP BY `營收年月`,`商品名稱`,`DEVICETEAMB2B`,`導購`;
 
-conditions00 = [(df['銷售館別'] == '手機 / Apple / 平板 / 耳機'), (df['銷售館別'] == '家電 / 電視 / 季節 / 冰箱'),
-                (df['銷售館別'] == '筆電 / 週邊 / 電玩 / 攝影') | (df['銷售館別'] == '健身 / 旅行 / 戶外 / 車類') | (df['銷售館別'] == '機車館'),
-                (df['銷售館別'] == '日用 / 餐廚 / 親子 / 尿布') | (df['銷售館別'] == '餐廚 / 清潔 / 日用 / 紙品') | (df['銷售館別'] == '美食 / 飲料 / 生鮮 / 零食') | (df['銷售館別'] == '傢俱 / 收納 / 寢飾 / 床墊') | (df['銷售館別'] == '餐券 / 旅遊票券 / 禮盒'),
-                (df['銷售館別'] == '服裝內衣 / 精品 / 運動鞋') | (df['銷售館別'] == '保養 / 彩妝 / 香氛 / 洗沐') | (df['銷售館別'] == '保健 / 美顏 / 營養 / 醫材')]
-values00 = ['手機平板', '家電影音', '資訊休閒', '美食居家', '流行美妝']
-# noinspection PyTypeChecker
-df['銷售部別'] = np.select(conditions00, values00, default='其它')
+SELECT `營收年月`,`導購`,`分類`,`使用折價券`,`訂單日`,SUM(`營收`)
+FROM (SELECT LEFT(訂單編號,8) AS "訂單日",CASE
+                                         WHEN `report_部別`="手機平板數位部" THEN "手機"
+                                         ELSE "非手機"
+                                         END "分類",
+             `導購`,`營收`,`營收年月`,CASE
+                                     WHEN (`無償折扣碼折抵金額`+`無償行銷折價券`)!=0 THEN "Y"
+                                     ELSE "N"
+                                     END "使用折價券"
+      FROM lifecycle_2022
+      WHERE 1=1
+      AND `營收年月` IN ("202202","202204")
+      AND `EC_type`="B2C"
+      AND `exclusion_tag`="N"
+      AND `導購`="LINE購物") z
+GROUP BY `營收年月`,`導購`,`分類`,`使用折價券`,`訂單日`;
 
-df['企採註記'] = np.where((df['業績原始館別'] == 'CRM') | (df['業績原始館別'] == '企採團購館') | (df['商品名稱'].str.contains('企採')), 'Y', 'N')
-df['折價券'] = np.where(df['企採註記'] == 'N', df['無償折扣碼'] + df['無償折價券'], 0)
-df['無償活動打折扣'] = df['活動打折扣'] - df['有償活動打折扣']
-df['無償活動折現金'] = df['活動折現金'] - df['有償活動折現金']
-df['活動折價'] = df['個人對品折價券'] + df['無償活動打折扣'] + df['無償活動折現金']
-df['iPhone'] = np.where((df['商品名稱'].str.upper().str.contains('IPHONE')) & (df['售價'] > 10000) &
-                        ((df['供應商名稱'] == '遠傳電信股份有限公司') | (df['供應商名稱'] == '全虹企業股份有限公司')), 'Y', 'N')
-conditions01 = [(df['企採註記'] == 'Y') & (df['iPhone'] == 'Y'),
-                (df['企採註記'] == 'N') & (df['iPhone'] == 'Y'),
-                (df['商品名稱'].str.upper().str.contains('MACBOOK')) & (df['售價'] > 10000),
-                (df['商品名稱'].str.upper().str.contains('IPAD')) & (df['售價'] > 3000),
-                (df['商品名稱'].str.upper().str.contains('AIRPODS')) & (df['售價'] > 3500),
-                (df['商品名稱'].str.upper().str.contains('MDOVIA')),
-                (df['商品名稱'].str.upper().str.contains('DIRT DEVIL')) | (df['商品名稱'].str.upper().str.contains('DIRTDEVIL')),
-                (df['商品名稱'].str.contains('小米')) & (df['商品名稱'].str.contains('顯示器')),
-                (df['商品名稱'].str.contains('除濕機')),(df['商品名稱'].str.contains('櫻桃') & df['主目錄第一層目錄'] == '季節水果 | 蔬菜'),
-                (df['銷售館別'] == '超商兌換券'), (df['銷售館別'] == '超商商品')]
-values01 = ['iPhone(企採)', 'iPhone(非企採)', 'MacBook', 'iPad', 'AirPods', 'Mdovia吸塵器', 'Dirt Devil吸塵器',
-            '小米顯示器', '除濕機','櫻桃', '超商兌換券', '超商商品']
-# noinspection PyTypeChecker
-df['Key Product'] = np.select(conditions01, values01, default='N')
+CREATE TABLE diff_2202_2204
+SELECT `營收年月`,`report_部別`,`report_館別`,`主目錄第一層目錄`,`交易序號`,`訂單編號`,`商品名稱`,`會員編號`,
+       `折價券碼名稱`,`有無償`,`導購註記`,`加碼日註記`,`折價券註記`,`88折及95折註記`,`心生活註記`,`HPG活動註記`,
+       `手機企採註記`,`iPhone註記`,`營收`,`折後毛利`,`遠傳幣遠時無償`,`遠傳幣遠時有償`,`遠傳幣其它有償`
+FROM (SELECT `營收年月`,`report_部別`,CASE WHEN `導購`="美安" AND `導購分潤比`!=0 THEN "美安"
+                                          WHEN  `導購`="美安friday嚴選" AND `導購分潤比`!=0 THEN "美安friday嚴選"
+                                          WHEN  `導購`="LINE購物" AND `導購分潤比`!=0 THEN "LINE購物"
+                                          WHEN  `導購`="SHOPBACK" AND `導購分潤比`!=0 THEN "SHOPBACK"
+                                          WHEN  `導購`!="N" AND `導購分潤比`!=0 THEN "OTHERS"
+                                          ELSE "N"
+                                     END "導購註記",
+                                     CASE WHEN LEFT(`訂單編號`,8) IN ("20220208","20220212","20220218","20220223","20220415") AND `導購`="LINE購物" AND `導購分潤比`!=0 THEN "Y"
+                                          ELSE "N"
+                                     END "加碼日註記",
+                                     CASE WHEN (`無償折扣碼折抵金額`+`無償行銷折價券`)!=0 THEN "Y"
+                                          ELSE "N"
+                                     END "折價券註記",
+                                     CASE WHEN `折價券碼名稱` LIKE "%88折%" AND `折價券碼名稱` LIKE "%價券%" THEN "Y"
+                                          WHEN `折價券碼名稱` LIKE "%88折%" AND `折價券碼名稱` LIKE "%折扣碼%" THEN "Y"
+                                          WHEN `折價券碼名稱` LIKE "%95折%" THEN "Y"
+                                          ELSE "N"
+                                     END "88折及95折註記",
+                                     CASE WHEN `心生活_FLAG`="Y" or `FET_PROMOTION_FLAG`="Y" THEN "Y"
+                                          ELSE "N"
+                                     END "心生活註記",
+                                     CASE WHEN HPG_promotion="Y" THEN "Y"
+                                          ELSE "N"
+                                     END "HPG活動註記",
+                                     CASE WHEN `report_部別`="手機平板數位部" AND `企採註記`="Y" THEN "Y"
+                                          WHEN `report_部別`="手機平板數位部" AND `商品名稱` LIKE "%iPhone%" AND `商品名稱` LIKE "%一批%" THEN "Y"
+                                          ELSE "N"
+                                     END "手機企採註記",
+                                     CASE WHEN `report_部別`="手機平板數位部" AND `商品名稱` LIKE "%iPhone%" AND `營收`/`淨出貨數量`>5000 THEN "Y"
+                                          ELSE "N"
+                                     END "iPhone註記",
+             `營收`,`營收`-`折價券_alloc`-`銷貨成本` AS "折後毛利",`會員編號`,`折價券碼名稱`,`有無償`,`遠傳幣遠時無償`,
+             `遠傳幣遠時有償`,`遠傳幣其它有償`,`商品名稱`,`訂單編號`,`交易序號`,`主目錄第一層目錄`,`report_館別`
+      FROM lifecycle_2022
+      LEFT JOIN hpg_promotion on lifecycle_2022.`訂單編號`=hpg_promotion.EC訂單號碼
+      WHERE `EC_type`="B2C" AND `exclusion_tag`="N" AND `營收年月` IN ("202202","202204")) AS t;
 
-conditions02 = [(df['賣場'] == '專人企採'),(df['賣場'] == '企採_Jeffrey'),(df['賣場'] == '企採_Tifa'),
-                (df['賣場'] == '企採_Rita'),(df['賣場'] == 'B型'),(df['賣場'].str.contains('B型_品牌網').values.astype(bool)),
-                (df['賣場'].str.contains('B型_員購網').values.astype(bool)),(df['賣場'] == 'Co-Brand再轉轉'),(df['賣場'] == '網紅看盤'),
-                (df['銷售館別'] == '超商商品'),(df['銷售館別'] == '愛買線上購物(SID12停用)')]
-values02 = ['專人企採','專人企採','專人企採','專人企採','B型','B型','員購網','Co-Brand再轉轉','網紅看盤','超商商品','愛買']
-# noinspection PyTypeChecker
-df['賣場註記'] = np.select(conditions02, values02, default='3+1網')
+USE raw_data;
+SELECT `營收年月`,SUM(`營收`) FROM lifecycle_2022
+GROUP BY `營收年月`;
+SELECT `營收年月`,`EC_type`,`會員編號`,`訂單編號`,`report_館別`,`商品名稱`,`有無使用折價券`,`BAU_EXTRA`,`是否愛買`,`是否iPhone企採`,
+       `是否手機館`,`導購`,SUM(`淨出貨數量`) "淨出貨數量",SUM(`業績_訂單銷售金額`) "業績_訂單銷售金額",SUM(`營收`) "營收",
+       SUM(`平台手續費_alloc`) "平台手續費收入",SUM(`折價券_alloc`) "折價券", SUM(`遠傳幣返利_alloc`+`遠傳幣給點_alloc`) "遠傳幣",
+       SUM(`遠傳幣補貼`) "遠傳幣補貼",SUM(`系統使用費_alloc`) "系統使用費", SUM(`銷貨成本`) "銷貨成本",SUM(`後扣_alloc`) "後扣",
+       SUM(`全虹rebate_period_alloc`) "全虹rebate_period",SUM(`logistic_alloc`) "logistic",SUM(`金流手續費_alloc`) "金流手續費",
+       SUM(`導購費用_alloc`) "導購費用", SUM(`廣宣費用_alloc`) "廣宣費用",SUM(`關企佣金_alloc`) "關企佣金",
+       SUM(`其它行銷費用_alloc`) "其它行銷費用",SUM(`公關費用_alloc`) "公關費用",
+       CASE WHEN t.`是否iPhone企採`="Y" THEN "企採"
+            WHEN t.`BAU_EXTRA`="BAU" THEN "全站"
+            WHEN t.`BAU_EXTRA`="Extra" THEN "特開"
+            ELSE "非折"
+       END "註記"
+FROM (SELECT *, CASE WHEN UPPER(`商品名稱`) LIKE "%IPHONE%" AND `營收`/`淨出貨數量` >10000  AND `原始館別` IN ("企採團購館","CRM") THEN "Y"
+                     WHEN UPPER(`商品名稱`) LIKE "%IPHONE%" AND `營收`/`淨出貨數量` <-10000 AND `原始館別` IN ("企採團購館","CRM") THEN "Y"
+                     ELSE "N"
+                END "是否iPhone企採",
+                CASE WHEN `產品歸館後館別` LIKE "%手機%" THEN "Y"
+                     ELSE "N"
+                END "是否手機館",
+                CASE WHEN `產品歸館後館別` LIKE "%愛買%" THEN "Y"
+                     ELSE "N"
+                END "是否愛買",
+                CASE WHEN `折價券_alloc` !=0 THEN "Y"
+                     ELSE "N"
+                END "有無使用折價券",
+                CASE WHEN `折價券_alloc`=0 THEN "N"
+                     WHEN `折價券分類` IN ("客服","行銷_心生活","行銷") THEN "BAU"
+                     WHEN `折扣碼分類` IN ("客服","行銷_心生活","行銷") THEN "BAU"
+                     WHEN `折價券碼名稱` LIKE "%銀行活動%" THEN "BAU"
+                     WHEN `折價券碼名稱` LIKE "%加碼%" THEN "Extra"
+                     WHEN `折價券碼名稱` LIKE "%95折%" THEN "Extra"
+                     WHEN `折價券碼名稱` LIKE "%88折%" AND `折價券碼名稱` NOT LIKE "%限量折扣%" THEN "Extra"
+                     WHEN `折價券碼名稱` LIKE "%618%" THEN "Extra"
+                     ELSE "BAU"
+                END "BAU_EXTRA"
+        FROM lifecycle_coupon) as t
+WHERE `營收年月` IN ("202205","202206","202207","202208")
+GROUP BY `營收年月`,`EC_type`,`會員編號`,`訂單編號`,`report_館別`,`商品名稱`,`有無使用折價券`,`BAU_EXTRA`,`是否愛買`,`是否iPhone企採`,`是否手機館`,`導購`;
 
-df['Net Revenue'] = df['銷貨收入'] - df['折價券'] - df['活動折價']
-df['前毛'] = df['銷貨收入'] - df['銷貨成本']
-df['折後毛利'] = df['Net Revenue'] - df['銷貨成本']
-df.drop(['活動打折扣','活動折現金','有償活動打折扣','有償活動折現金','無償折價券','無償折扣碼'], axis=1, inplace=True)
-df.to_excel(r'C:\Users\vance_hsu\Desktop\Day4 Report.xlsx')
-print('success')
+CREATE TEMPORARY TABLE UID_table01
+SELECT DISTINCT `會員編號` as memberid01
+FROM
+(SELECT * FROM lifecycle WHERE `行銷追蹤碼3` IN ("turnturn_AI","easywallet_AI","metrotaipei_AI")) a;
+CREATE TEMPORARY TABLE UID_table02
+SELECT DISTINCT `會員編號` as memberid02,b.`rank`
+FROM
+(SELECT *,ROW_NUMBER() OVER (Partition by `會員編號` Order by `訂單編號` ASC) AS "rank" FROM lifecycle) b
+WHERE b.`rank`=1 and `行銷追蹤碼3` IN ("turnturn_AI","easywallet_AI","metrotaipei_AI");
+CREATE TABLE turnturn_analysis
+Select *
+From lifecycle
+LEFT JOIN UID_table01 ON lifecycle.會員編號=UID_table01.memberid01
+LEFT JOIN UID_table02 ON lifecycle.會員編號=UID_table02.memberid02
+WHERE 1=1
+AND `營收年月` Between 202111 and 202212
+AND UID_table01.memberid01 IS NOT NULL;
+DROP TEMPORARY TABLE IF EXISTS UID_table;
+DROP TABLE turnturn_analysis;
+USE raw_data;
+SELECT `日期`,`會員編號`,`主目錄第一層目錄`,`導購`,`iPhone註記`,SUM(`業績_訂單銷售金額`),SUM(`營收`)
+FROM (SELECT date_format(`訂單日期`,'%Y%m') as 日期,`會員編號`,`主目錄第一層目錄`,`導購`,CASE WHEN `商品名稱` LIKE "%iPhone%" THEN "iPhone" ELSE "Others" END AS iPhone註記,`業績_訂單銷售金額`,`營收`
+FROM lifecycle_2020
+WHERE `會員編號`='14810121') as t
+GROUP BY `日期`,`會員編號`,`主目錄第一層目錄`,`導購`,`iPhone註記`;
+SELECT `日期`,`會員編號`,`訂單金額`
+FROM (SELECT date_format(`訂單日期`,'%Y%m') as 日期,`會員編號`,SUM(`業績_訂單銷售金額`) as '訂單金額'
+FROM lifecycle_2020
+WHERE `原始館別` NOT IN ('CRM','企採團購館')
+GROUP BY date_format(`訂單日期`,'%Y%m'),`會員編號`) as t
+WHERE `訂單金額`>1000000;
+SELECT date_format(`訂單日期`,'%Y%m') as 日期,SUM(`業績_訂單銷售金額`) as '訂單金額'
+FROM lifecycle_2023_new
+WHERE `原始館別` NOT IN ('CRM','企採團購館')
+GROUP BY date_format(`訂單日期`,'%Y%m');
+SELECT `營收年月`,CASE WHEN `原始館別`='企採團購館' THEN '企採'
+                      WHEN `導購費用`!=0 and `無償行銷折價券`+`無償折扣碼折抵金額`!=0 THEN '導購&折價'
+                      WHEN `導購費用`!=0 THEN '導購'
+                      WHEN `無償行銷折價券`+`無償折扣碼折抵金額`!=0 THEN '折價'
+                      ELSE 'Others'
+                 END `營收分類`,SUM(`營收`-`折價券_alloc`-`活動折價`-`遠傳幣返利_alloc`+`遠傳幣給點_alloc`-`遠傳幣補貼`+`系統使用費_alloc`) as Revenue
+FROM lifecycle_2023_new2
+WHERE `exclusion_tag`='N' AND `營收年月` BETWEEN 202301 and 202306
+GROUP BY `營收年月`,CASE WHEN `原始館別`='企採團購館' THEN '企採'
+                        WHEN `導購費用`!=0 and `無償行銷折價券`+`無償折扣碼折抵金額`!=0 THEN '導購&折價'
+                        WHEN `導購費用`!=0 THEN '導購'
+                        WHEN `無償行銷折價券`+`無償折扣碼折抵金額`!=0 THEN '折價'
+                   ELSE 'Others'
+                   END;
+SELECT `營收年月`,CASE WHEN `折價券碼名稱` IN ('0601-0611-現領折價券1000_滿10000','0601-0611-預塞折價券1000_滿10000','0612-0620-現領折價券1000_滿10000','0612-0620-預塞折價券1000_滿10000',
+                                            '0601-0611-現領折價券2000_滿20000','0601-0611-預塞折價券2000_滿20000','0612-0620-現領折價券2000_滿20000','0612-0620-預塞折價券2000_滿20000',
+                                            '0621-0630-現領折價券1000_滿10000','0621-0630-預塞折價券1000_滿10000') THEN 'special'
+                      WHEN `無償行銷折價券`+`無償折扣碼折抵金額`!=0 THEN 'Others'
+                 ELSE 'N'
+                 END `折價券分類`,SUM(`營收`-`折價券_alloc`-`活動折價`-`遠傳幣返利_alloc`+`遠傳幣給點_alloc`-`遠傳幣補貼`+`系統使用費_alloc`) as Revenue
+FROM lifecycle_2023_new2
+WHERE `營收年月`=202306 AND `無償行銷折價券`+`無償折扣碼折抵金額`!=0 AND `原始館別`!='企採團購館' AND `exclusion_tag`='N'
+GROUP BY `營收年月`,CASE WHEN `折價券碼名稱` IN ('0601-0611-現領折價券1000_滿10000','0601-0611-預塞折價券1000_滿10000','0612-0620-現領折價券1000_滿10000','0612-0620-預塞折價券1000_滿10000',
+                                            '0601-0611-現領折價券2000_滿20000','0601-0611-預塞折價券2000_滿20000','0612-0620-現領折價券2000_滿20000','0612-0620-預塞折價券2000_滿20000',
+                                            '0621-0630-現領折價券1000_滿10000','0621-0630-預塞折價券1000_滿10000') THEN 'special'
+                       WHEN `無償行銷折價券`+`無償折扣碼折抵金額`!=0 THEN 'Others'
+                   ELSE 'N'
+                   END;
+SELECT `營收年月`,SUM(`營收`) as Revenue
+FROM lifecycle_2023_new2
+WHERE `折價券碼名稱` IN ('0601-0611-現領折價券1000_滿10000','0601-0611-預塞折價券1000_滿10000','0612-0620-現領折價券1000_滿10000','0612-0620-預塞折價券1000_滿10000',
+                                            '0601-0611-現領折價券2000_滿20000','0601-0611-預塞折價券2000_滿20000','0612-0620-現領折價券2000_滿20000','0612-0620-預塞折價券2000_滿20000',
+                                            '0621-0630-現領折價券1000_滿10000','0621-0630-預塞折價券1000_滿10000')
+GROUP BY `營收年月`;
+SELECT *
+FROM lifecycle_2023_new2
+WHERE 1=1
+AND `商品名稱`="irocks T07 NEO人體工學椅 專用保潔墊 C07N"
+AND `折價券碼名稱` IN ('0601-0611-現領折價券1000_滿10000','0601-0611-預塞折價券1000_滿10000','0612-0620-現領折價券1000_滿10000','0612-0620-預塞折價券1000_滿10000',
+                                            '0601-0611-現領折價券2000_滿20000','0601-0611-預塞折價券2000_滿20000','0612-0620-現領折價券2000_滿20000','0612-0620-預塞折價券2000_滿20000',
+                                            '0621-0630-現領折價券1000_滿10000','0621-0630-預塞折價券1000_滿10000');
+SELECT date_format(`帳號建立日`,'%Y%m') AS Month,`導購`,COUNT(DISTINCT `交易序號`)
+FROM lifecycle_2023_new2
+WHERE 1=1
+AND `導購`="LINE購物"
+AND date_format(`帳號建立日`,'%Y%m')=202201
+GROUP BY date_format(`帳號建立日`,'%Y%m');
+SELECT `營收年月`,SUM(`營收`)
+FROM lifecycle_2023_new2
+GROUP BY `營收年月`;
+USE raw_data;
+SELECT `營收年月`,`原始館別`,`產品歸館後館別`,`主目錄第一層目錄`,`是否B型`,`供應商名稱`,SUM(`淨出貨數量`) "淨出貨數量",SUM(`營收`) "營收",SUM(`折價券_alloc`) "折價券",
+       SUM(`活動折價`) "活動折價",SUM(`銷貨成本`) "銷貨成本",SUM(`後扣_alloc`) "後扣"
+FROM lifecycle_2023_new2
+GROUP BY `營收年月`,`原始館別`,`產品歸館後館別`,`主目錄第一層目錄`,`是否B型`,`供應商名稱`;
+SELECT * FROM coupon_20231229;
+
+SELECT `營收年月`,`report_部別`,`report_館別`,
+       CASE WHEN `序號分類` IS NULL THEN "未使用"
+            WHEN `序號分類` IN ("折價券序號","雙十一序號") THEN "無敵"
+            WHEN `無償折扣碼折抵金額`!=0 THEN "非無敵_折扣碼"
+            WHEN `無償行銷折價券`!=0 THEN "非無敵_折價券"
+            WHEN `有償行銷折價券`+`有償折扣碼折抵金額`!=0 THEN "未使用"
+            WHEN `無償行銷折價券`=0 AND `無償折扣碼折抵金額`=0 THEN "未使用"
+            ELSE "Kill"
+        END "分群",
+       COUNT(DISTINCT `訂單編號`)"訂單數",SUM(`淨出貨數量`) "淨出貨數量",SUM(`營收`) "營收",
+       SUM(`有償行銷折價券`) "有償折價券",SUM(`有償折扣碼折抵金額`) "有償折扣碼",SUM(`無償行銷折價券`) "無償折價券",SUM(`無償折扣碼折抵金額`) "無償折扣碼",
+       SUM(`折價券_alloc`-`無償行銷折價券`-`無償折扣碼折抵金額`) "愛買折價券",SUM(`折價券_alloc`) "折價券",SUM(`活動折價`) "活動折價",
+       SUM(`個人對品折價券`) "對品折價券",SUM(`無償活動折現金`) "無償活動折現金",SUM(`無償活動打折扣`)"無償活動打折扣",SUM(`遠傳幣返利_alloc`+`遠傳幣給點_alloc`) "遠傳幣",
+       SUM(`遠傳幣補貼`) "遠傳幣補貼",SUM(`系統使用費_alloc`) "系統使用費",SUM(`銷貨成本`) "銷貨成本",SUM(`後扣_alloc`) "後扣",SUM(`全虹rebate_period_alloc`) "全虹rebate_period",
+       SUM(`logistic_alloc`) "logistic",SUM(`金流手續費_alloc`) "金流手續費", SUM(`導購費用_alloc`) "導購費用",SUM(`廣宣費用_alloc`) "廣宣費用",
+       SUM(`關企佣金_alloc`) "關企佣金",SUM(`其它行銷費用_alloc`) "其它行銷費用",SUM(`公關費用_alloc`) "公關費用"
+FROM coupon_20231229
+WHERE 1=1
+AND `商品類型`!="贈品"
+AND `原始館別`!="企採團購館"
+AND exclusion_tag="N"
+AND `營收年月`=202312
+GROUP BY 1,2,3,4;
+SELECT `營收年月`,COUNT(*)
+FROM lifecycle_2023_new2
+GROUP BY 1
