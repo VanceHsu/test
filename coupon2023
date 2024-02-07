@@ -1,0 +1,18 @@
+import pandas as pd
+from sqlalchemy import create_engine
+from urllib.parse import quote_plus as urlquote
+
+db_pw = 'Vance_hsu_@123'
+engine = create_engine('mysql+pymysql://vance_hsu:%s@172.25.2.28:3306/raw_data?charset=utf8' % urlquote(db_pw))
+sqla = '''
+SELECT * FROM lifecycle_2023_new2
+WHERE 營收年月=202312
+'''
+dfa = pd.read_sql_query(sqla, engine)
+df01 = pd.read_excel(r'C:\Users\vance_hsu\Desktop\折價序號.xlsx')
+dfa['訂單編號'] = dfa['訂單編號'].astype('str')
+df01['訂單編號'] = df01['訂單編號'].astype('str')
+df = pd.merge(dfa, df01, on=['訂單編號'], how='left')
+df.to_sql('coupon_20231229', engine, if_exists='append', index=False)
+engine.dispose()
+print('success')
