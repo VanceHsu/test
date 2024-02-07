@@ -1,0 +1,216 @@
+#EC variable margin by 館
+SELECT `營收年月`,`賣場註記`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`折價券分類`,`折扣碼分類`,
+`折價券碼名稱`, SUM(`業績_訂單銷售金額`) "業績_訂單銷售金額",SUM(`營收`) "營收",SUM(`平台手續費_alloc`) "平台手續費收入",
+SUM(`折價券_alloc`) "折價券",SUM(`活動折價`),SUM(`個人對品折價券`),SUM(`無償活動打折扣`),SUM(`無償活動折現金`),
+SUM(`遠傳幣返利_alloc`+`遠傳幣給點_alloc`) "遠傳幣",SUM(`遠傳幣補貼`) "遠傳幣補貼",SUM(`系統使用費_alloc`) "系統使用費",
+SUM(`銷貨成本`) "銷貨成本",SUM(`後扣_alloc`) "後扣", SUM(`全虹rebate_period_alloc`) "全虹rebate_period",
+SUM(`logistic_alloc`) "logistic",SUM(`金流手續費_alloc`) "金流手續費",SUM(`導購費用_alloc`) "導購費用",
+SUM(`廣宣費用_alloc`) "廣宣費用",SUM(`關企佣金_alloc`) "關企佣金",SUM(`其它行銷費用_alloc`) "其它行銷費用",
+SUM(`公關費用_alloc`) "公關費用"
+FROM lifecycle_2023_new2
+WHERE exclusion_tag="N" AND `營收年月`=202308
+GROUP BY `營收年月`,`賣場註記`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`折價券分類`,`折扣碼分類`,`折價券碼名稱`;
+#聯合咖啡券清單
+SELECT `營收年月`,`賣場註記`,`原始館別`,`report_館別`,`訂單編號`,`商品名稱`,`淨出貨數量`,`供應商名稱`,`導購`,`廣宣`,
+`業績_訂單銷售金額`,`營收`,`平台手續費_alloc`,`無償行銷折價券`,`無償折扣碼折抵金額`,`活動折價`,`個人對品折價券`,
+`無償活動打折扣`,`無償活動折現金`,`遠傳幣返利_alloc`,`遠傳幣給點_alloc`,`遠傳幣補貼`,`系統使用費_alloc`,`銷貨成本`,
+`後扣_alloc`,`logistic_alloc`,`全虹rebate_period_alloc`,`金流手續費_alloc`,`廣宣費用_alloc`,`導購費用_alloc`,
+`關企佣金_alloc`,`公關費用_alloc`,`其它行銷費用_alloc`
+FROM lifecycle_2023
+where `供應商代碼` IN ("SEC056730000","SEC220600581") AND `營收年月`=202210;
+#FET CVM tracking report
+SELECT `營收年月`,`賣場註記`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`折價券分類`,`折扣碼分類`,
+`折價券碼名稱`,`導購`,`廣宣`,`FET_PROMOTION_FLAG`,`心生活_FLAG`,SUM(`淨出貨數量`) "淨出貨數量",SUM(`業績_訂單銷售金額`) "業績_訂單銷售金額",
+SUM(`營收`) "營收",SUM(`平台手續費_alloc`) "平台手續費收入",SUM(`折價券_alloc`) "折價券",SUM(`活動折價`),SUM(`個人對品折價券`),
+SUM(`無償活動打折扣`),SUM(`無償活動折現金`), SUM(`遠傳幣返利_alloc`+`遠傳幣給點_alloc`) "遠傳幣",SUM(`遠傳幣補貼`) "遠傳幣補貼",
+SUM(`系統使用費_alloc`) "系統使用費", SUM(`銷貨成本`) "銷貨成本",SUM(`後扣_alloc`) "後扣",SUM(`全虹rebate_period_alloc`) "全虹rebate_period",
+SUM(`logistic_alloc`) "logistic",SUM(`金流手續費_alloc`) "金流手續費",SUM(`導購費用_alloc`) "導購費用", SUM(`廣宣費用_alloc`) "廣宣費用",
+SUM(`關企佣金_alloc`) "關企佣金",SUM(`其它行銷費用_alloc`) "其它行銷費用",SUM(`公關費用_alloc`) "公關費用"
+FROM lifecycle_2023_new2
+where exclusion_tag="N" and (`FET_PROMOTION_FLAG`="Y" or `心生活_FLAG`="Y") and `營收年月`=202305
+GROUP BY `營收年月`,`賣場註記`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`折價券分類`,`折扣碼分類`,
+`折價券碼名稱`,`導購`,`廣宣`,`FET_PROMOTION_FLAG`,`心生活_FLAG`;
+#Tracking report
+SELECT `營收年月`,`賣場註記`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`折價券分類`,`折扣碼分類`,
+`折價券碼名稱`,`導購`,`廣宣`,SUM(`淨出貨數量`) "淨出貨數量",SUM(`業績_訂單銷售金額`) "業績_訂單銷售金額",SUM(`營收`) "營收",
+SUM(`平台手續費_alloc`) "平台手續費收入",SUM(`折價券_alloc`) "折價券",SUM(`活動折價`),SUM(`個人對品折價券`),SUM(`無償活動打折扣`),
+SUM(`無償活動折現金`),SUM(`遠傳幣返利_alloc`+`遠傳幣給點_alloc`) "遠傳幣", SUM(`遠傳幣補貼`) "遠傳幣補貼",
+SUM(`系統使用費_alloc`) "系統使用費", SUM(`銷貨成本`) "銷貨成本",SUM(`後扣_alloc`) "後扣", SUM(`全虹rebate_period_alloc`) "全虹rebate_period",
+SUM(`logistic_alloc`) "logistic",SUM(`金流手續費_alloc`) "金流手續費", SUM(`導購費用_alloc`) "導購費用",
+SUM(`廣宣費用_alloc`) "廣宣費用",SUM(`關企佣金_alloc`) "關企佣金", SUM(`其它行銷費用_alloc`) "其它行銷費用",
+SUM(`公關費用_alloc`) "公關費用"
+FROM lifecycle_2023_new2
+WHERE `導購`="美安" AND `exclusion_tag`="N" AND `營收年月`=202304
+GROUP BY `營收年月`,`賣場註記`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`折價券分類`,`折扣碼分類`,
+`折價券碼名稱`,`導購`,`廣宣`;
+#Deviceteam Tracking report_目錄在412168的iPhone企採要手動修改Deviceteam跟deviceteamB2B的註記為Y
+SELECT `營收年月`,`賣場註記`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`訂單編號`,`商品編號`,
+`商品名稱`,`供應商名稱`,`折價券分類`,`折扣碼分類`,`折價券碼名稱`,`導購`,`廣宣`,`Deviceteam`,`Deviceteamb2b`,`淨出貨數量`,
+`業績_訂單銷售金額`,`營收`,`平台手續費_alloc`,`折價券_alloc`,`活動折價`,`個人對品折價券`,`無償活動打折扣`,`無償活動折現金`,
+`遠傳幣返利_alloc`+`遠傳幣給點_alloc` "遠傳幣",`遠傳幣補貼`,`系統使用費_alloc`,`銷貨成本`,`後扣_alloc`,
+`全虹rebate_period_alloc`,`logistic_alloc`,`金流手續費_alloc`,`導購費用_alloc`,`廣宣費用_alloc`,`關企佣金_alloc`,
+`其它行銷費用_alloc`,`公關費用_alloc`,`商品目錄編號`
+FROM lifecycle_2023_new2
+WHERE (`Deviceteam`="Y" OR `Deviceteamb2b`="Y") OR ((商品目錄編號 LIKE "412167%%" OR 商品目錄編號 LIKE "412168%%") AND
+供應商名稱 IN ("遠傳電信股份有限公司","全虹企業股份有限公司")) OR (商品名稱 LIKE "%%愛買%%" AND 商品名稱 LIKE "%%一批%%")
+HAVING `營收年月`=202301;
+#Mobile analysis
+SELECT `營收年月`,`原始館別`,`產品歸館後館別`,`report_館別`,`report_部別`,`主目錄第一層目錄`,`商品編號`,`商品類型`,`商品名稱`,
+`會員編號`,`供應商名稱`,`導購`,SUM(`淨出貨數量`) "淨出貨數量",SUM(`業績_訂單銷售金額`) "業績_訂單銷售金額",SUM(`營收`) "營收",
+SUM(`平台手續費_alloc`) "平台手續費收入",SUM(`折價券_alloc`) "折價券",SUM(`活動折價`) "活動折價",SUM(`遠傳幣返利_alloc`+`遠傳幣給點_alloc`) "遠傳幣",
+SUM( CASE WHEN `遠傳幣補貼` IS NULL THEN 0 ELSE `遠傳幣補貼` END) "遠傳幣補貼",SUM(`系統使用費_alloc`) "系統使用費", SUM(`銷貨成本`) "銷貨成本",
+SUM(`後扣_alloc`) "後扣", SUM(`全虹rebate_period_alloc`) "全虹rebate_period",SUM(`金流手續費_alloc`) "金流手續費", SUM(`導購費用_alloc`) "導購費用",
+SUM(`關企佣金_alloc`) "關企佣金"
+FROM lifecycle_2023_new2
+WHERE 1=1
+AND `主目錄第一層目錄` IN ("一般手機 / 福利機","智慧型手機")
+AND `商品類型` NOT IN ("贈品","配件/加購")
+AND `商品名稱` NOT LIKE "%折價券%"
+AND `營收年月` BETWEEN 202308 and 202309
+GROUP BY `營收年月`,`原始館別`,`產品歸館後館別`,`report_館別`,`report_部別`,`主目錄第一層目錄`,`商品編號`,`商品類型`,`商品名稱`,
+`會員編號`,`供應商名稱`,`導購`;
+
+#行銷管道營收
+SELECT `營收年月`,SUM(`導購營收`),SUM(`廣宣營收`),SUM(`導購廣宣營收`)
+FROM (SELECT `營收年月`,CASE
+                            WHEN `導購`!="N" THEN `營收`
+                            ELSE 0
+                            END "導購營收",CASE
+                                               WHEN `廣宣`!="N" THEN `營收`
+                                               ELSE 0
+                                               END "廣宣營收",CASE
+                                                                  WHEN `導購`!="N" AND `廣宣`!="N" THEN `營收`
+                                                                  ELSE 0
+                                                                  END "導購廣宣營收"
+                                                                  FROM lifecycle_2023_new2) AS t
+GROUP BY `營收年月`;
+SELECT `營收年月`,SUM(`營收`) FROM lifecycle_2023_new2
+WHERE 1=1
+AND `原始館別` IN ("企採團購館","CRM")
+AND exclusion_tag = "N"
+GROUP BY `營收年月`;
+#負毛Tracking report
+SELECT `營收年月`,`EC_type`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`訂單編號`,`商品編號`,`商品名稱`,`供應商名稱`,`導購`,`廣宣`,`淨出貨數量`,
+`業績_訂單銷售金額`,`營收`,`平台手續費_alloc`,`折價券_alloc`,`遠傳幣返利_alloc`+`遠傳幣給點_alloc` "遠傳幣",`系統使用費_alloc`,`銷貨成本`,`後扣_alloc`,`全虹rebate_period_alloc`,
+`logistic_alloc`,`金流手續費_alloc`,`導購費用_alloc`,`關企佣金_alloc`,
+`營收`-`折價券_alloc`-`遠傳幣返利_alloc`-`遠傳幣給點_alloc`+`系統使用費_alloc`-`銷貨成本`+`後扣_alloc`+`全虹rebate_period_alloc`-`金流手續費_alloc`-`導購費用_alloc`-`關企佣金_alloc` "DCM"
+FROM lifecycle_2021
+WHERE `report_部別` IN ("流行美妝部","美食居家部","資訊休閒部","家電影音部","手機平板數位部");
+SELECT `營收年月`,`report_部別`,COUNT(DISTINCT`訂單編號`)
+FROM (SELECT `營收年月`,`EC_type`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`訂單編號`,`商品編號`,`商品名稱`,`供應商名稱`,`導購`,`廣宣`,`淨出貨數量`,
+`業績_訂單銷售金額`,`營收`,`平台手續費_alloc`,`折價券_alloc`,`遠傳幣返利_alloc`+`遠傳幣給點_alloc` "遠傳幣",`系統使用費_alloc`,`銷貨成本`,`後扣_alloc`,`全虹rebate_period_alloc`,
+`logistic_alloc`,`金流手續費_alloc`,`導購費用_alloc`,`關企佣金_alloc`,
+`營收`-`折價券_alloc`-`遠傳幣返利_alloc`-`遠傳幣給點_alloc`+`系統使用費_alloc`-`銷貨成本`+`後扣_alloc`+`全虹rebate_period_alloc`-`金流手續費_alloc`-`導購費用_alloc`-`關企佣金_alloc` "DCM"
+FROM lifecycle_2021
+WHERE `report_部別` IN ("流行美妝部","美食居家部","資訊休閒部","家電影音部","手機平板數位部")) AS T
+WHERE 1=1
+AND `DCM`<0
+AND `淨出貨數量`>0
+GROUP BY `營收年月`,`report_部別`;
+#心生活折扣碼
+SELECT `營收年月`,`訂單日期`,`EC_type`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,
+`交易序號`,`訂單編號`,`商品編號`,`商品線別`,`商品名稱`,`折價券碼名稱`,`會員編號`,`供應商名稱`,`導購`,`廣宣`,`有無償`,`淨出貨數量`,
+`業績_訂單銷售金額`,`營收`,`平台手續費_alloc`,`有償行銷折價券`+`有償折扣碼折抵金額` "有償折價券",
+`遠傳幣返利_alloc`+`遠傳幣給點_alloc` "遠傳幣",`系統使用費_alloc`,`銷貨成本`,`後扣_alloc`,`全虹rebate_period_alloc`,
+`logistic_alloc`,`金流手續費_alloc`,`導購費用_alloc`,`廣宣費用_alloc`,`關企佣金_alloc`,`其它行銷費用_alloc`,`公關費用_alloc`,
+`exclusion_tag`,`企採註記`,`商品類型`
+FROM lifecycle_2022
+WHERE 1=1
+AND`折價券碼名稱`IN ("心生活Lucky Draw50元折扣碼","心生活刮刮樂50元折扣碼","心生活幸運贈獎50元折扣碼","心生活幸運贈獎50元折扣碼(10月)",
+"心生活幸運贈獎50元折扣碼(11月)","心生活幸運贈獎50元折扣碼(12月)","心生活幸運贈獎50元折扣碼(7月)","心生活幸運贈獎50元折扣碼(8月)",
+"心生活幸運贈獎50元折扣碼(9月)","心生活轉轉樂50元折扣碼","心生活轉轉樂30元折扣碼","心生活轉轉樂20元折扣碼","心生活轉轉樂10元折扣碼")
+AND `營收年月`="202203";
+
+#轉轉Tracking report
+SELECT `營收年月`,`EC_type`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`折價券分類`,`折扣碼分類`,
+`折價券碼名稱`,`導購`,`廣宣`,`交易序號`,`訂單編號`,`商品名稱`,`會員編號`,`行銷追蹤碼3`,SUM(`淨出貨數量`) "淨出貨數量",SUM(`業績_訂單銷售金額`) "業績_訂單銷售金額",SUM(`營收`) "營收",
+SUM(`平台手續費_alloc`) "平台手續費收入",SUM(`折價券_alloc`) "折價券" ,SUM(`活動折價`),SUM(`個人對品折價券`),SUM(`無償活動打折扣`),
+SUM(`無償活動折現金`),SUM(`遠傳幣返利_alloc`+`遠傳幣給點_alloc`) "遠傳幣", SUM(`遠傳幣補貼`) "遠傳幣補貼",
+SUM(`系統使用費_alloc`) "系統使用費", SUM(`銷貨成本`) "銷貨成本",SUM(`後扣_alloc`) "後扣", SUM(`全虹rebate_period_alloc`) "全虹rebate_period",
+SUM(`logistic_alloc`) "logistic",SUM(`金流手續費_alloc`) "金流手續費", SUM(`導購費用_alloc`) "導購費用",
+SUM(`廣宣費用_alloc`) "廣宣費用",SUM(`關企佣金_alloc`) "關企佣金", SUM(`其它行銷費用_alloc`) "其它行銷費用",
+SUM(`公關費用_alloc`) "公關費用"
+FROM lifecycle_2022
+WHERE `行銷追蹤碼3` IN ("turnturn_AI","easywallet_AI","metrotaipei_AI") AND `商品類型`!="贈品" AND `營收年月` IN (202211,202210) AND `exclusion_tag`="N"
+GROUP BY `營收年月`,`EC_type`,`原始館別`,`產品歸館後館別`,`歸館後館別代碼`,`report_館別`,`report_部別`,`折價券分類`,`折扣碼分類`,
+`折價券碼名稱`,`導購`,`廣宣`,`交易序號`,`訂單編號`,`商品名稱`,`會員編號`,`行銷追蹤碼3`;
+
+#EC營收by企採
+SELECT `營收年月`,`原始館別`,`產品歸館後館別`,`主目錄第一層目錄`,`商品名稱`,`供應商名稱`,SUM(`淨出貨數量`) "淨出貨數量",SUM(`營收`) "營收",SUM(`折價券_alloc`) "折價券",
+       SUM(`活動折價`) "活動折價", SUM(`遠傳幣返利_alloc`+`遠傳幣給點_alloc`+`遠傳幣補貼`) "遠傳幣",SUM(`系統使用費_alloc`) "系統使用費",SUM(`銷貨成本`) "銷貨成本",SUM(`後扣_alloc`) "後扣"
+FROM lifecycle_2023_new2
+WHERE 1=1
+AND `原始館別` IN ("CRM","企採團購館")
+AND `主目錄第一層目錄` IN ("一般手機 / 福利機","智慧型手機")
+AND `商品類型` NOT IN ("贈品","配件/加購")
+AND `商品名稱` NOT LIKE "%%折價券%%"
+AND `營收年月`=202312
+GROUP BY `營收年月`,`原始館別`,`產品歸館後館別`,`主目錄第一層目錄`,`商品名稱`,`供應商名稱`;
+
+#EC營收by非企採
+SELECT `營收年月`,SUM(`營收`-`折價券_alloc`-`活動折價`-`遠傳幣`-`遠傳幣補貼`+`系統使用費_alloc`) "Revenue",
+       SUM(`銷貨成本`-`後扣_alloc`-`全虹rebate_period_alloc`) "COGS",
+       SUM(`營收`-`折價券_alloc`-`活動折價`-`遠傳幣`-`遠傳幣補貼`+`系統使用費_alloc`-`銷貨成本`+`後扣_alloc`+`全虹rebate_period_alloc`) "Margin"
+FROM
+(SELECT `營收年月`,`營收`,`折價券_alloc`,CASE WHEN `活動折價` IS NULL THEN 0 ELSE `活動折價` END as "活動折價",`遠傳幣返利_alloc`+`遠傳幣給點_alloc` as "遠傳幣",
+        CASE WHEN `遠傳幣補貼` IS NULL THEN 0 ELSE `遠傳幣補貼` END as "遠傳幣補貼",`系統使用費_alloc`,`銷貨成本`,`後扣_alloc`,`全虹rebate_period_alloc`
+FROM lifecycle_2023_new2
+WHERE 1=1
+AND `原始館別` NOT IN ("CRM","企採團購館")
+AND `主目錄第一層目錄` IN ("一般手機 / 福利機","智慧型手機")
+AND `商品類型` NOT IN ("贈品","配件/加購")
+AND `商品名稱` NOT LIKE "%折價券%") as t
+GROUP BY `營收年月`;
+SELECT `營收年月`,SUM(`營收`-`折價券_alloc`-`遠傳幣`+`系統使用費_alloc`) "Revenue",
+       SUM(`銷貨成本`-`後扣_alloc`-`全虹rebate_period_alloc`) "COGS",
+       SUM(`營收`-`折價券_alloc`-`遠傳幣`+`系統使用費_alloc`-`銷貨成本`+`後扣_alloc`+`全虹rebate_period_alloc`) "Margin"
+FROM
+(SELECT `營收年月`,`營收`,`折價券_alloc`,`遠傳幣返利_alloc`+`遠傳幣給點_alloc` as "遠傳幣",
+        `系統使用費_alloc`,`銷貨成本`,`後扣_alloc`,`全虹rebate_period_alloc`
+FROM lifecycle_2021
+WHERE 1=1
+AND `原始館別` NOT IN ("CRM","企採團購館")
+AND `主目錄第一層目錄` IN ("一般手機 / 福利機","智慧型手機")
+AND `商品類型` NOT IN ("贈品","配件/加購")
+AND `商品名稱` NOT LIKE "%折價券%") as t
+GROUP BY `營收年月`;
+
+insert into lifecycle
+SELECT `營收年月`,CASE WHEN `營收年月` IS NOT NULL THEN NULL END `EC_type`,`賣場註記`,`原始館別`,`產品歸館後館別`,
+`歸館後館別代碼`,`report_館別`,`report_部別`,`交易序號`,`訂單編號`,`會員編號`,`主目錄館別ID`,`主目錄館別`,
+`主目錄第一層目錄ID`,`主目錄第一層目錄`,`發票聯別`,`商品編號`,`商品名稱`,`供應商名稱`,`折價券分類`,`折扣碼分類`,
+`折價券碼名稱`,`FET_PROMOTION_FLAG`,`心生活_FLAG`,`大遠傳_FLAG`,`導購`,`廣宣`,`exclusion_tag`,`淨出貨數量`,
+`業績_訂單銷售金額`,`營收`,`平台手續費_alloc`,`折價券_alloc`,`遠傳幣返利_alloc`+`遠傳幣給點_alloc`as "遠傳幣",
+`遠傳幣補貼`,`系統使用費_alloc`,`銷貨成本`,`後扣_alloc`,`全虹rebate_period_alloc`,`logistic_alloc`,
+`金流手續費_alloc`,`導購費用_alloc`,`廣宣費用_alloc`,`關企佣金_alloc`,`其它行銷費用_alloc`,`公關費用_alloc`,
+`行銷追蹤碼2`,`行銷追蹤碼3`,`遠傳幣加碼`,`個人對品折價券`,`無償活動打折扣`,`無償活動折現金`,`活動折價`
+FROM raw_data.lifecycle_2023_new2
+WHERE `營收年月` Between 202308 and 202312;
+
+USE raw_data;
+SELECT `營收年月`,SUM(`全虹rebate_period_alloc`)
+FROM lifecycle_2021
+WHERE `原始館別` NOT IN ("CRM","企採團購館") AND `主目錄第一層目錄` IN ("一般手機 / 福利機","智慧型手機")
+GROUP BY `營收年月`;
+
+SELECT `營收年月`,SUM(`營收`-`折價券_alloc`-`遠傳幣`+`系統使用費_alloc`) "Revenue",
+       SUM(`銷貨成本`-`後扣_alloc`-`全虹rebate_period_alloc`) "COGS",
+       SUM(`營收`-`折價券_alloc`-`遠傳幣`+`系統使用費_alloc`-`銷貨成本`+`後扣_alloc`+`全虹rebate_period_alloc`) "Margin"
+FROM
+(SELECT `營收年月`,`營收`,`折價券_alloc`,`遠傳幣返利_alloc`+`遠傳幣給點_alloc` as "遠傳幣",
+        `系統使用費_alloc`,`銷貨成本`,`後扣_alloc`,`全虹rebate_period_alloc`
+FROM lifecycle_2021
+WHERE 1=1
+AND `原始館別` NOT IN ("CRM","企採團購館")
+AND `主目錄第一層目錄` IN ("Apple 專區")
+AND `商品類型` NOT IN ("贈品","配件/加購")
+AND `商品名稱` NOT LIKE "%折價券%"
+AND UPPER(`商品名稱`) LIKE "%IPHONE%") as t
+GROUP BY `營收年月`;
+SELECT `營收年月`,`原始館別`,`產品歸館後館別`,`是否B型`,SUM(`淨出貨數量`) "淨出貨數量",SUM(`營收`) "營收",SUM(`折價券_alloc`) "折價券",
+       SUM(`活動折價`) "活動折價", SUM(`銷貨成本`) "銷貨成本",SUM(`後扣_alloc`) "後扣",SUM(`全虹rebate_period_alloc`) "rebate"
+FROM lifecycle_2023_new2
+WHERE 1=1
+AND `exclusion_tag`="N"
+AND `營收年月`=202312
+GROUP BY 1,2,3,4;
