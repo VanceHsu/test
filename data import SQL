@@ -1,0 +1,11 @@
+import pandas as pd
+from sqlalchemy import create_engine
+from urllib.parse import quote_plus as urlquote
+
+df = pd.read_excel(r'C:\Users\vance_hsu\Desktop\HPG_promotion.xlsx')
+
+db_pw = 'Vance_hsu_@123'
+engine = create_engine('mysql+pymysql://vance_hsu:%s@172.25.2.28:3306/raw_data?charset=utf8mb4' % urlquote(db_pw))
+df.to_sql('hpg_promotion', engine, if_exists='append', index=False)
+engine.dispose()
+print('success')
