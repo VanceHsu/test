@@ -1,0 +1,66 @@
+import cx_Oracle
+import pandas as pd
+import numpy as np
+
+# 連結Oracle database lifecycle
+connection = cx_Oracle.connect('vance_hsu/vance_hsu_123@10.97.15.146:1521/ISDB')
+sql = '''
+Select 訂單月份,訂單日期,交易編號,訂單編號,訂單狀態B,銷售館別,業績原始館別,商品線別,商品序號,商品名稱,
+       供應商名稱,導購來源,LAST追蹤碼,追蹤碼3,MEMUID,付款方式,期數,"折價券/碼名稱",第一層CID名稱,  
+       運送方式,金卡會員註記,數量,銷貨收入,F幣,返利,無償折價券,無償折扣碼,個人對品折價券,活動打折扣,
+       活動折現金,有償活動打折扣,有償活動折現金,銷貨成本,導購,金流費用,售價,成本,行銷贊助費,銷售獎勵金,年度銷售獎勵金
+From DM_EC.V_402_ALL 
+where 訂單月份=202111 AND 已付款註記='Y' AND 訂單狀態B NOT IN ('已退貨','取消訂單成功','退貨完成，退款處理中','退貨處理中')
+'''
+df = pd.read_sql(sql, con=connection)
+connection.close()
+
+df['訂單日'] = df['訂單編號'].str[:8].astype('int64')
+df['天期'] = df['訂單編號'].str[6:8]
+df['企採註記'] = np.where((df['業績原始館別'] == 'CRM') | (df['業績原始館別'] == '企採團購館') | (df['商品名稱'].str.contains('企採')), 'Y', 'N')
+df['折價券'] = np.where(df['企採註記'] == 'N', df['無償折扣碼'] + df['無償折價券'], 0)
+# 計算金卡會員返利
+df['金卡會員'] = np.where(df['金卡會員註記'].str.contains('金卡'), 'Y', 'N')
+df['銷貨毛利率'] = np.where((df['銷貨收入'] == 0) | (df['銷貨成本'] == 0), 0, (df['銷貨收入']-df['銷貨成本'])/df['銷貨收入'])
+df['銷貨毛利率'].fillna(0, inplace=True)
+df['銷貨毛利率'] = round(df['銷貨毛利率'], 2)
+df['前毛%'] = np.where((df['銷貨收入'] == 0) | (df['銷貨成本'] == 0), 0, (df['銷貨收入'] - df['銷貨成本']) / df['銷貨收入'])
+df['前毛%'].fillna(0, inplace=True)
+df['前毛%'] = round(df['前毛%'], 2)
+conditions00 = [(df['金卡會員'] == 'Y') & (df['銷售館別'] == '愛買線上購物(SID12停用)'),
+                (df['金卡會員'] == 'Y') & (df['訂單日'] >= 20200101) & (df['銷貨毛利率'] < 0.07),
+                (df['金卡會員'] == 'Y') & (df['訂單日'] >= 20200101) & (df['銷貨毛利率'].between(0.07, 0.11)),
+                (df['金卡會員'] == 'Y') & (df['訂單日'] >= 20200101) & (df['銷貨毛利率'].between(0.12, 0.39)),
+                (df['金卡會員'] == 'Y') & (df['訂單日'] >= 20200101) & (df['銷貨毛利率'] >= 0.4),
+                (df['銷貨毛利率'] == 0)]
+values00 = [0.01, 0.01, 0.01, 0.03, 0.1, 0]
+df['返利率'] = np.select(conditions00, values00, default=0)
+conditions01 = [(df['企採註記'] == 'Y'), (df['金卡會員'] == 'Y')]
+values01 = ['N', 'Y']
+# noinspection PyTypeChecker
+df['遠傳幣返利分攤註記'] = np.select(conditions01, values01, default='N')
+df['遠傳幣返利'] = np.where(df['遠傳幣返利分攤註記'] == 'Y', round((df['銷貨收入'] - df['折價券']) * df['返利率'], 2), 0)
+conditions02 = [(df['遠傳幣返利'] > 1000), (df['遠傳幣返利'] < -1000)]
+values02 = [1000, -1000]
+df['遠傳幣返利'] = np.select(conditions02, values02, default=df['遠傳幣返利'])
+conditions02 = [(df['企採註記'] == 'Y') & (df['供應商名稱'] == '遠傳電信股份有限公司'), (df['企採註記'] == 'Y') & (df['供應商名稱'] == '全虹股份有限公司')]
+values02 = ['Y', 'Y']
+# noinspection PyTypeChecker
+df['遠傳企採'] = np.select(conditions02, values02, default='N')
+df['一般企採'] = np.where(df['遠傳企採'] == 'Y', 'N', df['企採註記'])
+df['ASP'] = df['銷貨收入']/df['數量']
+df['iPhone'] = np.where((df['企採註記']=='N') & (df['商品名稱'].str.contains('iPhone')) & ((df['供應商名稱'] == '遠傳電信股份有限公司')|(df['供應商名稱'] == '全虹企業股份有限公司')) & ((df['ASP']>10000) | (df['ASP']<-10000)),'Y','N')
+df['無償活動打折扣'] = df['活動打折扣'] - df['有償活動打折扣']
+df['無償活動折現金'] = df['活動折現金'] - df['有償活動折現金']
+df['活動折價'] = df['個人對品折價券'] + df['無償活動打折扣'] + df['無償活動折現金']
+df['轉轉註記'] =np.where((df['追蹤碼3']=='turnturn_AI') & (df['iPhone']=='N'),'Y','N')
+df['轉北捷註記'] =np.where((df['追蹤碼3']=='metrotaipei_AI') & (df['iPhone']=='N'),'Y','N')
+df['轉悠遊註記'] =np.where((df['追蹤碼3']=='easywallet_AI') & (df['iPhone']=='N'),'Y','N')
+df['LINE加碼'] = np.where((df['天期']=='11') & (df['iPhone']=='N') & (df['導購來源']=='導購-LINE購物'),round((df['銷貨收入'] - df['折價券'] -df['活動折價'])*0.08*0.7*1.15, 0),0)
+conditions01 = [(df['LINE加碼'] > 500), (df['LINE加碼'] < -500)]
+values01 = [500, -500]
+df['LINE加碼'] = np.select(conditions01, values01, default=df['LINE加碼'])
+df['後扣'] = df['行銷贊助費']+df['銷售獎勵金']+df['年度銷售獎勵金']
+df.drop(['活動打折扣','活動折現金','有償活動打折扣','有償活動折現金','行銷贊助費','銷售獎勵金','年度銷售獎勵金'], axis=1, inplace=True)
+df.to_excel(r'C:\Users\vance_hsu\Desktop\1111_Y21.xlsx')
+print('success')
