@@ -1,0 +1,61 @@
+import cx_Oracle
+import pandas as pd
+import numpy as np
+
+connection = cx_Oracle.connect('vance_hsu/vance_hsu_123@10.97.15.146:1521/ISDB')
+sql = '''
+Select TO_CHAR(ADJUSTDATE,'YYYYMM'),賣場,業績原始館別,銷售館別,主目錄第一層目錄ID,主目錄第一層目錄,供應商名稱,商品序號,商品名稱,商品類型,售價,成本,SUM(數量) as 數量,
+       SUM(銷貨收入) as 銷貨收入,SUM(銷貨成本) as 銷貨成本,SUM(無償折價券) as 無償折價券,SUM(無償折扣碼) as 無償折扣碼,
+       SUM(活動打折扣) as 活動打折扣,SUM(活動折現金) as 活動折現金,SUM(有償活動打折扣) as 有償活動打折扣,
+       SUM(有償活動折現金) as 有償活動折現金,SUM(個人對品折價券) as 個人對品折價券
+From DM_EC.V_403_ALL
+WHERE TO_CHAR(ADJUSTDATE,'YYYYMM') IN ('202312','202311','202212')
+GROUP BY TO_CHAR(ADJUSTDATE,'YYYYMM'),賣場,業績原始館別,銷售館別,主目錄第一層目錄ID,主目錄第一層目錄,供應商名稱,商品序號,商品名稱,商品類型,售價,成本
+'''
+df = pd.read_sql(sql, con=connection)
+connection.close()
+
+conditions00 = [(df['銷售館別'] == '手機 / Apple / 平板 / 耳機'), (df['銷售館別'] == '家電 / 電視 / 季節 / 冰箱'),
+                (df['銷售館別'] == '筆電 / 週邊 / 電玩 / 攝影') | (df['銷售館別'] == '健身 / 旅行 / 戶外 / 車類') | (df['銷售館別'] == '機車館'),
+                (df['銷售館別'] == '日用 / 餐廚 / 親子 / 尿布') | (df['銷售館別'] == '餐廚 / 清潔 / 日用 / 紙品') | (df['銷售館別'] == '美食 / 飲料 / 生鮮 / 零食') | (df['銷售館別'] == '傢俱 / 收納 / 寢飾 / 床墊') | (df['銷售館別'] == '餐券 / 旅遊票券 / 禮盒'),
+                (df['銷售館別'] == '服裝內衣 / 精品 / 運動鞋') | (df['銷售館別'] == '保養 / 彩妝 / 香氛 / 洗沐') | (df['銷售館別'] == '保健 / 美顏 / 營養 / 醫材')]
+values00 = ['手機平板', '家電影音', '資訊休閒', '美食居家', '流行美妝']
+# noinspection PyTypeChecker
+df['銷售部別'] = np.select(conditions00, values00, default='其它')
+
+df['企採註記'] = np.where((df['業績原始館別'] == 'CRM') | (df['業績原始館別'] == '企採團購館') | (df['商品名稱'].str.contains('企採')), 'Y', 'N')
+df['折價券'] = np.where(df['企採註記'] == 'N', df['無償折扣碼'] + df['無償折價券'], 0)
+df['無償活動打折扣'] = df['活動打折扣'] - df['有償活動打折扣']
+df['無償活動折現金'] = df['活動折現金'] - df['有償活動折現金']
+df['活動折價'] = df['個人對品折價券'] + df['無償活動打折扣'] + df['無償活動折現金']
+df['iPhone'] = np.where((df['商品名稱'].str.upper().str.contains('IPHONE')) & (df['售價'] > 10000) &
+                        ((df['供應商名稱'] == '遠傳電信股份有限公司') | (df['供應商名稱'] == '全虹企業股份有限公司')), 'Y', 'N')
+conditions01 = [(df['企採註記'] == 'Y') & (df['iPhone'] == 'Y'),
+                (df['企採註記'] == 'N') & (df['iPhone'] == 'Y'),
+                (df['商品名稱'].str.upper().str.contains('MACBOOK')) & (df['售價'] > 10000),
+                (df['商品名稱'].str.upper().str.contains('IPAD')) & (df['售價'] > 3000),
+                (df['商品名稱'].str.upper().str.contains('AIRPODS')) & (df['售價'] > 3500),
+                (df['商品名稱'].str.upper().str.contains('MDOVIA')),
+                (df['商品名稱'].str.upper().str.contains('DIRT DEVIL')) | (df['商品名稱'].str.upper().str.contains('DIRTDEVIL')),
+                (df['商品名稱'].str.contains('小米')) & (df['商品名稱'].str.contains('顯示器')),
+                (df['商品名稱'].str.contains('除濕機')),(df['商品名稱'].str.contains('櫻桃') & df['主目錄第一層目錄'] == '季節水果 | 蔬菜'),
+                (df['銷售館別'] == '超商兌換券'), (df['銷售館別'] == '超商商品')]
+values01 = ['iPhone(企採)', 'iPhone(非企採)', 'MacBook', 'iPad', 'AirPods', 'Mdovia吸塵器', 'Dirt Devil吸塵器',
+            '小米顯示器', '除濕機','櫻桃', '超商兌換券', '超商商品']
+# noinspection PyTypeChecker
+df['Key Product'] = np.select(conditions01, values01, default='N')
+
+conditions02 = [(df['賣場'] == '專人企採'),(df['賣場'] == '企採_Jeffrey'),(df['賣場'] == '企採_Tifa'),
+                (df['賣場'] == '企採_Rita'),(df['賣場'] == 'B型'),(df['賣場'].str.contains('B型_品牌網').values.astype(bool)),
+                (df['賣場'].str.contains('B型_員購網').values.astype(bool)),(df['賣場'] == 'Co-Brand再轉轉'),(df['賣場'] == '網紅看盤'),
+                (df['銷售館別'] == '超商商品'),(df['銷售館別'] == '愛買線上購物(SID12停用)')]
+values02 = ['專人企採','專人企採','專人企採','專人企採','B型','B型','員購網','Co-Brand再轉轉','網紅看盤','超商商品','愛買']
+# noinspection PyTypeChecker
+df['賣場註記'] = np.select(conditions02, values02, default='3+1網')
+
+df['Net Revenue'] = df['銷貨收入'] - df['折價券'] - df['活動折價']
+df['前毛'] = df['銷貨收入'] - df['銷貨成本']
+df['折後毛利'] = df['Net Revenue'] - df['銷貨成本']
+df.drop(['活動打折扣','活動折現金','有償活動打折扣','有償活動折現金','無償折價券','無償折扣碼'], axis=1, inplace=True)
+df.to_excel(r'C:\Users\vance_hsu\Desktop\Day4 Report.xlsx')
+print('success')
